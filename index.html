@@ -41,11 +41,23 @@ import {
 } from 'lucide-react';
 
 // --- Firebase Configuration & Init ---
-const firebaseConfig = JSON.parse(__firebase_config);
+// Configuración proporcionada por el usuario
+const firebaseConfig = {
+  apiKey: "AIzaSyAJNTDKf8RrUQ_bvt9z1FD3hBQ9TtgFcuE",
+  authDomain: "streaming-72bc2.firebaseapp.com",
+  projectId: "streaming-72bc2",
+  storageBucket: "streaming-72bc2.firebasestorage.app",
+  messagingSenderId: "118775184891",
+  appId: "1:118775184891:web:e3234a80dad9beec725f5e"
+};
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// Identificador para la colección raíz en Firestore.
+// Si no hay variable de entorno, usamos 'stream-party-app' por defecto.
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'stream-party-app';
 
 // --- Assets & Constants ---
 const SERVICES = [
