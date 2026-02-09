@@ -1,527 +1,531 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  signOut, 
-  onAuthStateChanged,
-  signInWithCustomToken,
-  signInAnonymously
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  onSnapshot, 
-  updateDoc, 
-  arrayUnion,
-  collection
-} from 'firebase/firestore';
-import { 
-  Play, 
-  Pause,
-  MessageSquare, 
-  Share2, 
-  Settings, 
-  Users, 
-  LogOut, 
-  Plus, 
-  Send, 
-  Link as LinkIcon, 
-  Lock, 
-  Globe, 
-  Volume2, 
-  Maximize,
-  Smile,
-  X,
-  Copy,
-  AlertCircle
-} from 'lucide-react';
-
-// --- Firebase Configuration & Init ---
-// Configuración proporcionada por el usuario
-const firebaseConfig = {
-  apiKey: "AIzaSyAJNTDKf8RrUQ_bvt9z1FD3hBQ9TtgFcuE",
-  authDomain: "streaming-72bc2.firebaseapp.com",
-  projectId: "streaming-72bc2",
-  storageBucket: "streaming-72bc2.firebasestorage.app",
-  messagingSenderId: "118775184891",
-  appId: "1:118775184891:web:e3234a80dad9beec725f5e"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-// Identificador para la colección raíz en Firestore.
-// Si no hay variable de entorno, usamos 'stream-party-app' por defecto.
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'stream-party-app';
-
-// --- Assets & Constants ---
-const SERVICES = [
-  { id: 'youtube', name: 'YouTube', color: 'from-red-500 to-orange-600', icon: 'YT', supportsEmbed: true },
-  { id: 'netflix', name: 'Netflix', color: 'from-red-600 to-red-900', icon: 'N', supportsEmbed: false },
-  { id: 'prime', name: 'Prime Video', color: 'from-blue-400 to-blue-700', icon: 'P', supportsEmbed: false },
-  { id: 'disney', name: 'Disney+', color: 'from-blue-900 to-indigo-900', icon: 'D+', supportsEmbed: false },
-  { id: 'twitch', name: 'Twitch', color: 'from-purple-500 to-purple-800', icon: 'Tw', supportsEmbed: true },
-];
-
-const AVATARS = [
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Aneka',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Bob',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Milo'
-];
-
-// --- Helper Functions ---
-const generatePartyId = () => Math.random().toString(36).substring(2, 8).toUpperCase();
-const getYouTubeId = (url) => {
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[2].length === 11) ? match[2] : null;
-};
-
-// --- Components ---
-
-// 1. Landing Page
-const LandingPage = ({ onLogin, isLoggingIn }) => (
-  <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center relative overflow-hidden">
-    <div className="absolute top-0 left-0 w-full h-full opacity-20 pointer-events-none">
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-purple-600 rounded-full blur-[128px]"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-600 rounded-full blur-[128px]"></div>
-    </div>
-
-    <div className="z-10 text-center max-w-2xl px-6">
-      <div className="mb-6 flex justify-center">
-        <div className="w-20 h-20 bg-gradient-to-tr from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-2xl shadow-purple-500/30">
-          <Play size={40} fill="white" />
-        </div>
-      </div>
-      <h1 className="text-5xl md:text-7xl font-bold mb-6 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-purple-200 to-purple-400">
-        StreamParty
-      </h1>
-      <p className="text-xl text-slate-400 mb-10 leading-relaxed">
-        Cine virtual con amigos. Sincronización real, chat en vivo y soporte para YouTube.
-      </p>
-      
-      <button 
-        onClick={onLogin}
-        disabled={isLoggingIn}
-        className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-white text-slate-900 rounded-full focus:outline-none hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {isLoggingIn ? (
-            <span className="animate-pulse">Iniciando sesión...</span>
-        ) : (
-            <>
-                <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-6 h-6 mr-3"/>
-                Entrar con Google
-            </>
-        )}
-      </button>
-    </div>
-  </div>
-);
-
-// 2. Dashboard
-const Dashboard = ({ user, onJoinParty, onCreateParty, isJoining }) => {
-  const [partyCode, setPartyCode] = useState('');
-
-  return (
-    <div className="min-h-screen bg-slate-900 text-white p-6 md:p-12">
-      <header className="flex justify-between items-center mb-12">
-        <div className="flex items-center space-x-4">
-          <img src={user.photoURL || AVATARS[0]} alt="User" className="w-12 h-12 rounded-full border-2 border-purple-500" />
-          <div>
-            <h2 className="text-xl font-bold">Hola, {user.displayName}</h2>
-            <p className="text-sm text-slate-400">¿Qué quieres ver hoy?</p>
-          </div>
-        </div>
-        <button onClick={() => auth.signOut()} className="text-sm text-red-400 hover:text-red-300 font-bold">Cerrar Sesión</button>
-      </header>
-
-      <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-        {/* Create Party */}
-        <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-700 flex flex-col justify-center items-center text-center hover:bg-slate-800 transition group">
-            <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-purple-900/50 group-hover:scale-110 transition">
-                <Plus size={32} className="text-white"/>
-            </div>
-            <h3 className="text-2xl font-bold mb-2">Crear nueva Sala</h3>
-            <p className="text-slate-400 mb-6">Inicia una fiesta y elige el servicio de streaming.</p>
-            <div className="grid grid-cols-3 gap-2 w-full mb-6">
-                {SERVICES.slice(0, 3).map(s => (
-                    <button key={s.id} onClick={() => onCreateParty(s)} className={`text-xs p-2 rounded bg-slate-700 hover:bg-slate-600 truncate`}>
-                        {s.name}
-                    </button>
-                ))}
-            </div>
-        </div>
-
-        {/* Join Party */}
-        <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-700 flex flex-col justify-center items-center text-center hover:bg-slate-800 transition">
-            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-blue-900/50">
-                <Users size={32} className="text-white"/>
-            </div>
-            <h3 className="text-2xl font-bold mb-2">Unirse a una Sala</h3>
-            <p className="text-slate-400 mb-6">Introduce el código de la fiesta de tu amigo.</p>
-            <div className="flex w-full space-x-2">
-                <input 
-                    type="text" 
-                    placeholder="CÓDIGO (ej: A1B2C3)" 
-                    value={partyCode}
-                    onChange={(e) => setPartyCode(e.target.value.toUpperCase())}
-                    className="flex-1 bg-slate-950 border border-slate-600 rounded-xl px-4 text-center font-mono tracking-widest uppercase focus:border-blue-500 outline-none"
-                    maxLength={6}
-                />
-                <button 
-                    onClick={() => onJoinParty(partyCode)}
-                    disabled={!partyCode || isJoining}
-                    className="bg-blue-600 px-6 py-3 rounded-xl font-bold hover:bg-blue-500 disabled:opacity-50"
-                >
-                    {isJoining ? '...' : 'Entrar'}
-                </button>
-            </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// 3. Active Party Room
-const PartyRoom = ({ partyId, user, initialData, onLeave }) => {
-  const [partyData, setPartyData] = useState(initialData);
-  const [messages, setMessages] = useState([]);
-  const [inputText, setInputText] = useState('');
-  const [isSidebarOpen, setSidebarOpen] = useState(true);
-  const [videoUrlInput, setVideoUrlInput] = useState('');
-  const chatEndRef = useRef(null);
-  
-  // Real-time listener for Party Data & Chat
-  useEffect(() => {
-    if (!partyId) return;
-
-    // Listen to Party Document
-    const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
-    const unsubscribe = onSnapshot(partyRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setPartyData(data);
-        if (data.messages) setMessages(data.messages);
-      } else {
-        alert("La sala ha sido cerrada.");
-        onLeave();
-      }
-    });
-
-    return () => unsubscribe();
-  }, [partyId]);
-
-  // Auto-scroll chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const sendMessage = async (e) => {
-    e.preventDefault();
-    if (!inputText.trim()) return;
-
-    const newMessage = {
-      id: Date.now().toString(),
-      text: inputText,
-      sender: user.displayName,
-      photo: user.photoURL || AVATARS[0],
-      timestamp: Date.now()
-    };
-
-    const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
-    try {
-      await updateDoc(partyRef, {
-        messages: arrayUnion(newMessage)
-      });
-      setInputText('');
-    } catch (err) {
-      console.error("Error sending message:", err);
-    }
-  };
-
-  const updatePlayState = async (isPlaying) => {
-    const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
-    await updateDoc(partyRef, { isPlaying });
-  };
-
-  const changeVideo = async () => {
-    const service = SERVICES.find(s => s.id === partyData.serviceId);
-    let newVideoId = videoUrlInput;
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StreamParty</title>
+    <!-- 1. Tailwind CSS para los estilos -->
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    // YouTube ID Extraction
-    if (service.id === 'youtube') {
-       const ytId = getYouTubeId(videoUrlInput);
-       if (ytId) newVideoId = ytId;
-       else return alert("URL de YouTube inválida");
-    }
+    <!-- 2. Babel para traducir JSX en el navegador -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
-    await updateDoc(partyRef, { 
-        currentVideoId: newVideoId,
-        isPlaying: true
-    });
-    setVideoUrlInput('');
-  };
+    <!-- Estilos adicionales para scrollbar y animaciones -->
+    <style>
+        body { margin: 0; background-color: #020617; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-  const currentService = SERVICES.find(s => s.id === partyData.serviceId) || SERVICES[0];
-
-  return (
-    <div className="h-screen w-full bg-black text-white flex flex-col md:flex-row overflow-hidden font-sans">
-      
-      {/* LEFT: Video Player */}
-      <div className="flex-1 flex flex-col relative bg-slate-900">
+    <!-- 3. Tu Aplicación React -->
+    <!-- type="text/babel" es crucial para que Babel lo procese -->
+    <!-- data-type="module" permite usar imports modernos -->
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
+        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
         
-        {/* Top Bar */}
-        <div className="absolute top-0 left-0 right-0 z-20 p-4 flex justify-between items-center pointer-events-none">
-          <div className="pointer-events-auto flex items-center bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
-            <span className={`w-2 h-2 mr-3 rounded-full ${partyData.isPlaying ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
-            <span className="text-sm font-bold mr-2">Sala:</span>
-            <span className="font-mono text-yellow-400 tracking-wider select-all cursor-pointer" onClick={() => navigator.clipboard.writeText(partyId)}>{partyId}</span>
-          </div>
-          <button onClick={onLeave} className="pointer-events-auto p-2 bg-black/60 hover:bg-red-600/80 rounded-full transition backdrop-blur-md">
-            <LogOut size={20} />
-          </button>
-        </div>
+        // Importaciones de Firebase (Versión Web Modular vía CDN)
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { 
+            getAuth, 
+            signInWithPopup, 
+            GoogleAuthProvider, 
+            signOut, 
+            onAuthStateChanged,
+            signInWithCustomToken,
+            signInAnonymously
+        } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc, 
+            getDoc, 
+            onSnapshot, 
+            updateDoc, 
+            arrayUnion,
+            collection
+        } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
-        {/* Player Content */}
-        <div className="flex-1 flex items-center justify-center bg-black relative">
-            {currentService.supportsEmbed && partyData.currentVideoId ? (
-                currentService.id === 'youtube' ? (
-                    <iframe 
-                        width="100%" 
-                        height="100%" 
-                        src={`https://www.youtube.com/embed/${partyData.currentVideoId}?autoplay=${partyData.isPlaying ? 1 : 0}&controls=0&start=${partyData.timestamp || 0}`} 
-                        title="YouTube video player" 
-                        frameBorder="0" 
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                        allowFullScreen
-                        className="pointer-events-none" // Disable direct interaction to enforce sync (simplified)
-                    ></iframe>
-                ) : (
-                    // Generic embed fallback
-                    <div className="text-center">Embed genérico para {currentService.name}</div>
-                )
-            ) : (
-                <div className="text-center p-8 max-w-lg">
-                    {currentService.supportsEmbed ? (
-                        <div className="opacity-50 mb-4">
-                            <div className="text-6xl mb-4 mx-auto w-fit">{currentService.icon}</div>
-                            <p className="text-xl font-bold">Esperando video...</p>
-                            <p className="text-sm mt-2">El anfitrión debe seleccionar un contenido.</p>
+        // Iconos Lucide
+        import { 
+            Play, Pause, MessageSquare, Share2, Settings, Users, LogOut, 
+            Plus, Send, Link as LinkIcon, Lock, Globe, Volume2, Maximize, 
+            Smile, X, Copy, AlertCircle 
+        } from 'https://esm.sh/lucide-react@0.344.0';
+
+        // --- Configuración de Firebase del Usuario ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyAJNTDKf8RrUQ_bvt9z1FD3hBQ9TtgFcuE",
+            authDomain: "streaming-72bc2.firebaseapp.com",
+            projectId: "streaming-72bc2",
+            storageBucket: "streaming-72bc2.firebasestorage.app",
+            messagingSenderId: "118775184891",
+            appId: "1:118775184891:web:e3234a80dad9beec725f5e"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Identificador de App (Fallback si no hay variable de entorno)
+        const appId = 'stream-party-github';
+
+        // --- Constantes y Datos ---
+        const SERVICES = [
+            { id: 'youtube', name: 'YouTube', color: 'from-red-500 to-orange-600', icon: 'YT', supportsEmbed: true },
+            { id: 'netflix', name: 'Netflix', color: 'from-red-600 to-red-900', icon: 'N', supportsEmbed: false },
+            { id: 'prime', name: 'Prime Video', color: 'from-blue-400 to-blue-700', icon: 'P', supportsEmbed: false },
+            { id: 'disney', name: 'Disney+', color: 'from-blue-900 to-indigo-900', icon: 'D+', supportsEmbed: false },
+            { id: 'twitch', name: 'Twitch', color: 'from-purple-500 to-purple-800', icon: 'Tw', supportsEmbed: true },
+        ];
+
+        const AVATARS = [
+            'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
+            'https://api.dicebear.com/7.x/avataaars/svg?seed=Aneka',
+            'https://api.dicebear.com/7.x/avataaars/svg?seed=Bob',
+            'https://api.dicebear.com/7.x/avataaars/svg?seed=Milo'
+        ];
+
+        // --- Funciones Auxiliares ---
+        const generatePartyId = () => Math.random().toString(36).substring(2, 8).toUpperCase();
+        const getYouTubeId = (url) => {
+            if (!url) return null;
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        };
+
+        // --- Componentes ---
+
+        // 1. Landing Page
+        const LandingPage = ({ onLogin, isLoggingIn }) => (
+            <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-full opacity-20 pointer-events-none">
+                    <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-purple-600 rounded-full blur-[128px]"></div>
+                    <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-600 rounded-full blur-[128px]"></div>
+                </div>
+
+                <div className="z-10 text-center max-w-2xl px-6">
+                    <div className="mb-6 flex justify-center">
+                        <div className="w-20 h-20 bg-gradient-to-tr from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-2xl shadow-purple-500/30">
+                            <Play size={40} fill="white" />
                         </div>
+                    </div>
+                    <h1 className="text-5xl md:text-7xl font-bold mb-6 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-purple-200 to-purple-400">
+                        StreamParty
+                    </h1>
+                    <p className="text-xl text-slate-400 mb-10 leading-relaxed">
+                        Cine virtual con amigos. Sincronización real, chat en vivo y soporte para YouTube.
+                    </p>
+                    
+                    <button 
+                        onClick={onLogin}
+                        disabled={isLoggingIn}
+                        className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-white text-slate-900 rounded-full focus:outline-none hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                        {isLoggingIn ? (
+                            <span className="animate-pulse">Iniciando sesión...</span>
+                        ) : (
+                            <div className="flex items-center">
+                                <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-6 h-6 mr-3"/>
+                                <span>Entrar con Google</span>
+                            </div>
+                        )}
+                    </button>
+                </div>
+            </div>
+        );
+
+        // 2. Dashboard
+        const Dashboard = ({ user, onJoinParty, onCreateParty, isJoining }) => {
+            const [partyCode, setPartyCode] = useState('');
+
+            return (
+                <div className="min-h-screen bg-slate-900 text-white p-6 md:p-12">
+                    <header className="flex justify-between items-center mb-12">
+                        <div className="flex items-center space-x-4">
+                            <img src={user.photoURL || AVATARS[0]} alt="User" className="w-12 h-12 rounded-full border-2 border-purple-500" />
+                            <div>
+                                <h2 className="text-xl font-bold">Hola, {user.displayName || 'Usuario'}</h2>
+                                <p className="text-sm text-slate-400">¿Qué quieres ver hoy?</p>
+                            </div>
+                        </div>
+                        <button onClick={() => signOut(auth)} className="text-sm text-red-400 hover:text-red-300 font-bold">Cerrar Sesión</button>
+                    </header>
+
+                    <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                        {/* Create Party */}
+                        <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-700 flex flex-col justify-center items-center text-center hover:bg-slate-800 transition group">
+                            <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-purple-900/50 group-hover:scale-110 transition">
+                                <Plus size={32} className="text-white"/>
+                            </div>
+                            <h3 className="text-2xl font-bold mb-2">Crear nueva Sala</h3>
+                            <p className="text-slate-400 mb-6">Inicia una fiesta y elige el servicio de streaming.</p>
+                            <div className="grid grid-cols-3 gap-2 w-full mb-6">
+                                {SERVICES.slice(0, 3).map(s => (
+                                    <button key={s.id} onClick={() => onCreateParty(s)} className={`text-xs p-2 rounded bg-slate-700 hover:bg-slate-600 truncate text-white`}>
+                                        {s.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Join Party */}
+                        <div className="bg-slate-800/50 p-8 rounded-3xl border border-slate-700 flex flex-col justify-center items-center text-center hover:bg-slate-800 transition">
+                            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-blue-900/50">
+                                <Users size={32} className="text-white"/>
+                            </div>
+                            <h3 className="text-2xl font-bold mb-2">Unirse a una Sala</h3>
+                            <p className="text-slate-400 mb-6">Introduce el código de la fiesta de tu amigo.</p>
+                            <div className="flex w-full space-x-2">
+                                <input 
+                                    type="text" 
+                                    placeholder="CÓDIGO (ej: A1B2C3)" 
+                                    value={partyCode}
+                                    onChange={(e) => setPartyCode(e.target.value.toUpperCase())}
+                                    className="flex-1 bg-slate-950 border border-slate-600 rounded-xl px-4 text-center font-mono tracking-widest uppercase focus:border-blue-500 outline-none"
+                                    maxLength={6}
+                                />
+                                <button 
+                                    onClick={() => onJoinParty(partyCode)}
+                                    disabled={!partyCode || isJoining}
+                                    className="bg-blue-600 px-6 py-3 rounded-xl font-bold hover:bg-blue-500 disabled:opacity-50 text-white"
+                                >
+                                    {isJoining ? '...' : 'Entrar'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 3. Active Party Room
+        const PartyRoom = ({ partyId, user, initialData, onLeave }) => {
+            const [partyData, setPartyData] = useState(initialData);
+            const [messages, setMessages] = useState([]);
+            const [inputText, setInputText] = useState('');
+            const [isSidebarOpen, setSidebarOpen] = useState(true);
+            const [videoUrlInput, setVideoUrlInput] = useState('');
+            const chatEndRef = useRef(null);
+            
+            useEffect(() => {
+                if (!partyId) return;
+
+                const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
+                const unsubscribe = onSnapshot(partyRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        setPartyData(data);
+                        if (data.messages) setMessages(data.messages);
+                    } else {
+                        alert("La sala ha sido cerrada.");
+                        onLeave();
+                    }
+                });
+
+                return () => unsubscribe();
+            }, [partyId]);
+
+            useEffect(() => {
+                chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            const sendMessage = async (e) => {
+                e.preventDefault();
+                if (!inputText.trim()) return;
+
+                const newMessage = {
+                    id: Date.now().toString(),
+                    text: inputText,
+                    sender: user.displayName || 'Anon',
+                    photo: user.photoURL || AVATARS[0],
+                    timestamp: Date.now()
+                };
+
+                const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
+                try {
+                    await updateDoc(partyRef, {
+                        messages: arrayUnion(newMessage)
+                    });
+                    setInputText('');
+                } catch (err) {
+                    console.error("Error sending message:", err);
+                }
+            };
+
+            const updatePlayState = async (isPlaying) => {
+                const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
+                await updateDoc(partyRef, { isPlaying });
+            };
+
+            const changeVideo = async () => {
+                const service = SERVICES.find(s => s.id === partyData.serviceId);
+                let newVideoId = videoUrlInput;
+                
+                if (service.id === 'youtube') {
+                    const ytId = getYouTubeId(videoUrlInput);
+                    if (ytId) newVideoId = ytId;
+                    else return alert("URL de YouTube inválida");
+                }
+
+                const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
+                await updateDoc(partyRef, { 
+                    currentVideoId: newVideoId,
+                    isPlaying: true
+                });
+                setVideoUrlInput('');
+            };
+
+            const currentService = SERVICES.find(s => s.id === partyData.serviceId) || SERVICES[0];
+
+            return (
+                <div className="h-screen w-full bg-black text-white flex flex-col md:flex-row overflow-hidden font-sans">
+                    {/* LEFT: Video Player */}
+                    <div className="flex-1 flex flex-col relative bg-slate-900">
+                        <div className="absolute top-0 left-0 right-0 z-20 p-4 flex justify-between items-center pointer-events-none">
+                            <div className="pointer-events-auto flex items-center bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
+                                <span className={`w-2 h-2 mr-3 rounded-full ${partyData.isPlaying ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+                                <span className="text-sm font-bold mr-2">Sala:</span>
+                                <span className="font-mono text-yellow-400 tracking-wider select-all cursor-pointer" onClick={() => navigator.clipboard.writeText(partyId)}>{partyId}</span>
+                            </div>
+                            <button onClick={onLeave} className="pointer-events-auto p-2 bg-black/60 hover:bg-red-600/80 rounded-full transition backdrop-blur-md">
+                                <LogOut size={20} />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 flex items-center justify-center bg-black relative">
+                            {currentService.supportsEmbed && partyData.currentVideoId ? (
+                                currentService.id === 'youtube' ? (
+                                    <iframe 
+                                        width="100%" 
+                                        height="100%" 
+                                        src={`https://www.youtube.com/embed/${partyData.currentVideoId}?autoplay=${partyData.isPlaying ? 1 : 0}&controls=0&start=${partyData.timestamp || 0}`} 
+                                        title="YouTube video player" 
+                                        frameBorder="0" 
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                                        allowFullScreen
+                                        className="pointer-events-none"
+                                    ></iframe>
+                                ) : (
+                                    <div className="text-center">Embed genérico para {currentService.name}</div>
+                                )
+                            ) : (
+                                <div className="text-center p-8 max-w-lg">
+                                    {currentService.supportsEmbed ? (
+                                        <div className="opacity-50 mb-4">
+                                            <div className="text-6xl mb-4 mx-auto w-fit font-bold">{currentService.icon}</div>
+                                            <p className="text-xl font-bold">Esperando video...</p>
+                                            <p className="text-sm mt-2">El anfitrión debe pegar un link y dar click en Cargar.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+                                            <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4"/>
+                                            <h3 className="text-xl font-bold mb-2">Extensión Requerida</h3>
+                                            <p className="text-slate-400 text-sm mb-4">
+                                                Para sincronizar {currentService.name}, todos los participantes necesitan la extensión de navegador StreamParty.
+                                            </p>
+                                            <button className="bg-white text-black px-4 py-2 rounded-full font-bold text-sm hover:bg-slate-200">
+                                                Instalar Extensión (Simulado)
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="h-20 bg-slate-900 border-t border-slate-800 flex items-center px-6 justify-between shrink-0 z-30">
+                            <div className="flex items-center space-x-4 flex-1">
+                                <button 
+                                    onClick={() => updatePlayState(!partyData.isPlaying)}
+                                    className={`p-3 rounded-full ${partyData.isPlaying ? 'bg-slate-800 text-white' : 'bg-white text-black'} hover:scale-105 transition`}
+                                >
+                                    {partyData.isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+                                </button>
+                                
+                                <div className="flex-1 max-w-xl mx-4 relative group">
+                                    <input 
+                                        type="text" 
+                                        placeholder={currentService.id === 'youtube' ? "Pega un link de YouTube aquí..." : "Buscar contenido..."}
+                                        value={videoUrlInput}
+                                        onChange={(e) => setVideoUrlInput(e.target.value)}
+                                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-purple-500 outline-none"
+                                    />
+                                    <button 
+                                        onClick={changeVideo}
+                                        className="absolute right-1 top-1 bottom-1 px-3 bg-purple-600 rounded text-xs font-bold hover:bg-purple-500 text-white"
+                                    >
+                                        CARGAR
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div className="flex space-x-4 text-slate-400">
+                                <button onClick={() => setSidebarOpen(!isSidebarOpen)} className={`hover:text-white ${isSidebarOpen ? 'text-purple-400' : ''}`}>
+                                    <MessageSquare size={24}/>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* RIGHT: Chat Sidebar */}
+                    <div className={`${isSidebarOpen ? 'w-full md:w-80 translate-x-0' : 'w-0 translate-x-full hidden'} flex flex-col bg-slate-900 border-l border-slate-800 transition-all duration-300`}>
+                        <div className="p-4 border-b border-slate-800 bg-slate-800/30">
+                            <h3 className="font-bold text-sm text-slate-400 uppercase tracking-wider mb-2">Sala: {partyId}</h3>
+                            <div className="flex items-center justify-between bg-slate-950 p-2 rounded-lg border border-slate-800">
+                                <span className="text-xs text-slate-500 truncate">streamparty.app/join/{partyId}</span>
+                                <button onClick={() => navigator.clipboard.writeText(partyId)} className="text-purple-400 hover:text-white"><Copy size={14}/></button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                            {messages.map((msg, idx) => (
+                                <div key={idx} className="flex flex-col">
+                                    <div className="flex items-end space-x-2 mb-1">
+                                        <img src={msg.photo} alt="avatar" className="w-6 h-6 rounded-full" />
+                                        <span className="text-xs font-bold text-slate-300">{msg.sender}</span>
+                                        <span className="text-[10px] text-slate-600">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                    </div>
+                                    <div className="bg-slate-800 rounded-2xl rounded-tl-none px-4 py-2 text-sm text-slate-200 self-start ml-8">
+                                        {msg.text}
+                                    </div>
+                                </div>
+                            ))}
+                            <div ref={chatEndRef}></div>
+                        </div>
+
+                        <form onSubmit={sendMessage} className="p-3 bg-slate-800 border-t border-slate-700">
+                            <div className="relative">
+                                <input 
+                                    type="text" 
+                                    value={inputText}
+                                    onChange={(e) => setInputText(e.target.value)}
+                                    placeholder="Di algo..."
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-full px-4 py-3 pr-10 text-sm focus:outline-none focus:border-purple-500"
+                                />
+                                <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-purple-600 rounded-full text-white hover:bg-purple-500">
+                                    <Send size={14}/>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App Controller ---
+
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [activePartyId, setActivePartyId] = useState(null);
+            const [partyData, setPartyData] = useState(null);
+            const [isLoading, setIsLoading] = useState(false);
+            const [authLoading, setAuthLoading] = useState(true);
+
+            useEffect(() => {
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                    setAuthLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            const handleLogin = async () => {
+                try {
+                    setIsLoading(true);
+                    const provider = new GoogleAuthProvider();
+                    await signInWithPopup(auth, provider);
+                } catch (error) {
+                    console.error("Login failed", error);
+                    alert("Error al iniciar sesión: " + error.message);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const createParty = async (service) => {
+                if (!user) return;
+                setIsLoading(true);
+                const newPartyId = generatePartyId();
+                const newPartyData = {
+                    hostId: user.uid,
+                    serviceId: service.id,
+                    isPlaying: false,
+                    timestamp: 0,
+                    currentVideoId: '',
+                    createdAt: Date.now(),
+                    messages: [{
+                        sender: 'Sistema',
+                        text: `Sala de ${service.name} creada. ¡Invita a tus amigos!`,
+                        timestamp: Date.now(),
+                        photo: 'https://ui-avatars.com/api/?name=System&background=random'
+                    }]
+                };
+
+                try {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', `party_${newPartyId}`), newPartyData);
+                    setActivePartyId(newPartyId);
+                    setPartyData(newPartyData);
+                } catch (e) {
+                    console.error("Error creating party", e);
+                    alert("Error creando la sala: " + e.message);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const joinParty = async (code) => {
+                if (!user) return;
+                setIsLoading(true);
+                const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${code}`);
+                try {
+                    const snap = await getDoc(partyRef);
+                    if (snap.exists()) {
+                        setActivePartyId(code);
+                        setPartyData(snap.data());
+                    } else {
+                        alert("Fiesta no encontrada. Revisa el código.");
+                    }
+                } catch (e) {
+                    console.error("Error joining", e);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            if (authLoading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Cargando...</div>;
+
+            return (
+                <div className="font-sans antialiased text-slate-200 bg-slate-950">
+                    {!user ? (
+                        <LandingPage onLogin={handleLogin} isLoggingIn={isLoading} />
+                    ) : activePartyId && partyData ? (
+                        <PartyRoom 
+                            partyId={activePartyId} 
+                            user={user} 
+                            initialData={partyData}
+                            onLeave={() => { setActivePartyId(null); setPartyData(null); }} 
+                        />
                     ) : (
-                        <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
-                             <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4"/>
-                             <h3 className="text-xl font-bold mb-2">Extensión Requerida</h3>
-                             <p className="text-slate-400 text-sm mb-4">
-                                Para sincronizar {currentService.name}, todos los participantes necesitan la extensión de navegador StreamParty.
-                             </p>
-                             <button className="bg-white text-black px-4 py-2 rounded-full font-bold text-sm hover:bg-slate-200">
-                                Instalar Extensión (Simulado)
-                             </button>
-                        </div>
+                        <Dashboard 
+                            user={user} 
+                            onCreateParty={createParty} 
+                            onJoinParty={joinParty}
+                            isJoining={isLoading}
+                        />
                     )}
                 </div>
-            )}
-        </div>
+            );
+        };
 
-        {/* Controls Bar */}
-        <div className="h-20 bg-slate-900 border-t border-slate-800 flex items-center px-6 justify-between shrink-0 z-30">
-            <div className="flex items-center space-x-4 flex-1">
-                <button 
-                    onClick={() => updatePlayState(!partyData.isPlaying)}
-                    className={`p-3 rounded-full ${partyData.isPlaying ? 'bg-slate-800 text-white' : 'bg-white text-black'} hover:scale-105 transition`}
-                >
-                    {partyData.isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-                </button>
-                
-                {/* URL Input (Admin Only - Simulated check) */}
-                <div className="flex-1 max-w-xl mx-4 relative group">
-                    <input 
-                        type="text" 
-                        placeholder={currentService.id === 'youtube' ? "Pega un link de YouTube aquí..." : "Buscar contenido..."}
-                        value={videoUrlInput}
-                        onChange={(e) => setVideoUrlInput(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-purple-500 outline-none"
-                    />
-                    <button 
-                        onClick={changeVideo}
-                        className="absolute right-1 top-1 bottom-1 px-3 bg-purple-600 rounded text-xs font-bold hover:bg-purple-500"
-                    >
-                        CARGAR
-                    </button>
-                </div>
-            </div>
-            
-            <div className="flex space-x-4 text-slate-400">
-                <button onClick={() => setSidebarOpen(!isSidebarOpen)} className={`hover:text-white ${isSidebarOpen ? 'text-purple-400' : ''}`}>
-                    <MessageSquare size={24}/>
-                </button>
-            </div>
-        </div>
-      </div>
-
-      {/* RIGHT: Chat Sidebar */}
-      <div className={`${isSidebarOpen ? 'w-full md:w-80 translate-x-0' : 'w-0 translate-x-full hidden'} flex flex-col bg-slate-900 border-l border-slate-800 transition-all duration-300`}>
-        <div className="p-4 border-b border-slate-800 bg-slate-800/30">
-            <h3 className="font-bold text-sm text-slate-400 uppercase tracking-wider mb-2">Sala: {partyId}</h3>
-            <div className="flex items-center justify-between bg-slate-950 p-2 rounded-lg border border-slate-800">
-                <span className="text-xs text-slate-500 truncate">streamparty.app/join/{partyId}</span>
-                <button onClick={() => navigator.clipboard.writeText(partyId)} className="text-purple-400 hover:text-white"><Copy size={14}/></button>
-            </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {messages.map((msg, idx) => (
-                <div key={idx} className="flex flex-col">
-                    <div className="flex items-end space-x-2 mb-1">
-                        <img src={msg.photo} alt="avatar" className="w-6 h-6 rounded-full" />
-                        <span className="text-xs font-bold text-slate-300">{msg.sender}</span>
-                        <span className="text-[10px] text-slate-600">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                    </div>
-                    <div className="bg-slate-800 rounded-2xl rounded-tl-none px-4 py-2 text-sm text-slate-200 self-start ml-8">
-                        {msg.text}
-                    </div>
-                </div>
-            ))}
-            <div ref={chatEndRef}></div>
-        </div>
-
-        <form onSubmit={sendMessage} className="p-3 bg-slate-800 border-t border-slate-700">
-            <div className="relative">
-                <input 
-                    type="text" 
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    placeholder="Di algo..."
-                    className="w-full bg-slate-950 border border-slate-700 rounded-full px-4 py-3 pr-10 text-sm focus:outline-none focus:border-purple-500"
-                />
-                <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-purple-600 rounded-full text-white hover:bg-purple-500">
-                    <Send size={14}/>
-                </button>
-            </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-// --- Main App Controller ---
-
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [activePartyId, setActivePartyId] = useState(null);
-  const [partyData, setPartyData] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
-
-  // Auth Listener
-  useEffect(() => {
-    const initAuth = async () => {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-             // Fallback for preview only, usually you want real auth
-            await signInAnonymously(auth);
-        }
-    };
-    initAuth();
-
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setAuthLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const handleLogin = async () => {
-    try {
-      setIsLoading(true);
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Login failed", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const createParty = async (service) => {
-    if (!user) return;
-    setIsLoading(true);
-    const newPartyId = generatePartyId();
-    const newPartyData = {
-      hostId: user.uid,
-      serviceId: service.id,
-      isPlaying: false,
-      timestamp: 0,
-      currentVideoId: '', // YouTube ID or similar
-      createdAt: Date.now(),
-      messages: [{
-        sender: 'Sistema',
-        text: `Sala de ${service.name} creada. ¡Invita a tus amigos!`,
-        timestamp: Date.now(),
-        photo: 'https://ui-avatars.com/api/?name=System&background=random'
-      }]
-    };
-
-    try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', `party_${newPartyId}`), newPartyData);
-      setActivePartyId(newPartyId);
-      setPartyData(newPartyData);
-    } catch (e) {
-      console.error("Error creating party", e);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const joinParty = async (code) => {
-    if (!user) return;
-    setIsLoading(true);
-    const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${code}`);
-    try {
-      const snap = await getDoc(partyRef);
-      if (snap.exists()) {
-        setActivePartyId(code);
-        setPartyData(snap.data());
-      } else {
-        alert("Fiesta no encontrada. Revisa el código.");
-      }
-    } catch (e) {
-      console.error("Error joining", e);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  if (authLoading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Cargando...</div>;
-
-  return (
-    <div className="font-sans antialiased text-slate-200 bg-slate-950">
-      {!user ? (
-        <LandingPage onLogin={handleLogin} isLoggingIn={isLoading} />
-      ) : activePartyId && partyData ? (
-        <PartyRoom 
-            partyId={activePartyId} 
-            user={user} 
-            initialData={partyData}
-            onLeave={() => { setActivePartyId(null); setPartyData(null); }} 
-        />
-      ) : (
-        <Dashboard 
-            user={user} 
-            onCreateParty={createParty} 
-            onJoinParty={joinParty}
-            isJoining={isLoading}
-        />
-      )}
-    </div>
-  );
-}
+        // Renderizado de la App
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
