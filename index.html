@@ -217,7 +217,9 @@
             useEffect(() => {
                 if (!partyId) return;
 
-                const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
+                // FIX: Estructura de ruta corregida para tener 4 segmentos (Colección -> Doc -> Colección -> Doc)
+                const partyRef = doc(db, 'artifacts', appId, 'parties', `party_${partyId}`);
+                
                 const unsubscribe = onSnapshot(partyRef, (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
@@ -248,7 +250,9 @@
                     timestamp: Date.now()
                 };
 
-                const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
+                // FIX: Ruta corregida
+                const partyRef = doc(db, 'artifacts', appId, 'parties', `party_${partyId}`);
+                
                 try {
                     await updateDoc(partyRef, {
                         messages: arrayUnion(newMessage)
@@ -260,7 +264,8 @@
             };
 
             const updatePlayState = async (isPlaying) => {
-                const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
+                // FIX: Ruta corregida
+                const partyRef = doc(db, 'artifacts', appId, 'parties', `party_${partyId}`);
                 await updateDoc(partyRef, { isPlaying });
             };
 
@@ -274,7 +279,8 @@
                     else return alert("URL de YouTube inválida");
                 }
 
-                const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${partyId}`);
+                // FIX: Ruta corregida
+                const partyRef = doc(db, 'artifacts', appId, 'parties', `party_${partyId}`);
                 await updateDoc(partyRef, { 
                     currentVideoId: newVideoId,
                     isPlaying: true
@@ -467,8 +473,9 @@
                     }]
                 };
 
+                // FIX: Ruta corregida
                 try {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', `party_${newPartyId}`), newPartyData);
+                    await setDoc(doc(db, 'artifacts', appId, 'parties', `party_${newPartyId}`), newPartyData);
                     setActivePartyId(newPartyId);
                     setPartyData(newPartyData);
                 } catch (e) {
@@ -482,7 +489,8 @@
             const joinParty = async (code) => {
                 if (!user) return;
                 setIsLoading(true);
-                const partyRef = doc(db, 'artifacts', appId, 'public', 'data', `party_${code}`);
+                // FIX: Ruta corregida
+                const partyRef = doc(db, 'artifacts', appId, 'parties', `party_${code}`);
                 try {
                     const snap = await getDoc(partyRef);
                     if (snap.exists()) {
@@ -529,3 +537,5 @@
     </script>
 </body>
 </html>
+
+
