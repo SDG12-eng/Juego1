@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StreamParty - Multicines</title>
+    <title>StreamParty</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
@@ -12,16 +12,19 @@
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-        .glass { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
-        .service-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px -10px rgba(124, 58, 237, 0.5); }
+        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
+        .service-card:hover { transform: translateY(-5px); filter: brightness(1.2); }
         .mic-active { animation: pulse-red 1.5s infinite; background-color: #ef4444 !important; }
         @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        /* Animación de carga de Netflix */
+        .loader-ring { display: inline-block; width: 80px; height: 80px; }
+        .loader-ring:after { content: " "; display: block; width: 64px; height: 64px; margin: 8px; border-radius: 50%; border: 6px solid #fff; border-color: #fff transparent #fff transparent; animation: loader-ring 1.2s linear infinite; }
+        @keyframes loader-ring { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
-    <!-- API de YouTube -->
     <script src="https://www.youtube.com/iframe_api"></script>
 
     <script type="text/babel" data-type="module">
@@ -32,10 +35,10 @@
         import { getFirestore, doc, getDoc, onSnapshot, updateDoc, arrayUnion, setDoc, collection, addDoc, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
         import { 
             Play, Pause, MessageSquare, Users, LogOut, Plus, Send, Copy, 
-            Mic, Search, Loader2, MonitorPlay, Tv
+            Mic, Search, Loader2, MonitorPlay, ExternalLink, Share2
         } from 'https://esm.sh/lucide-react@0.344.0';
 
-        // --- CONFIGURACIÓN FIREBASE (Tu configuración) ---
+        // --- TU CONFIGURACIÓN FIREBASE ---
         const firebaseConfig = {
             apiKey: "AIzaSyAJNTDKf8RrUQ_bvt9z1FD3hBQ9TtgFcuE",
             authDomain: "streaming-72bc2.firebaseapp.com",
@@ -48,17 +51,16 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = 'stream-party-v4-final'; 
+        const appId = 'stream-party-v5-pro'; 
 
         // --- DATOS DE SERVICIOS ---
         const SERVICES = [
-            { id: 'youtube', name: 'YouTube', color: 'bg-red-600', icon: 'YT', type: 'embed' },
-            { id: 'netflix', name: 'Netflix', color: 'bg-red-700', icon: 'N', type: 'external' },
-            { id: 'disney', name: 'Disney+', color: 'bg-blue-900', icon: 'D+', type: 'external' },
-            { id: 'prime', name: 'Prime Video', color: 'bg-blue-500', icon: 'P', type: 'external' },
-            { id: 'hbo', name: 'Max', color: 'bg-purple-700', icon: 'HBO', type: 'external' },
-            { id: 'crunchyroll', name: 'Crunchyroll', color: 'bg-orange-500', icon: 'CR', type: 'external' },
-            { id: 'twitch', name: 'Twitch', color: 'bg-purple-600', icon: 'Tw', type: 'embed' },
+            { id: 'youtube', name: 'YouTube', color: 'bg-red-600', text: 'text-red-600', icon: 'https://upload.wikimedia.org/wikipedia/commons/0/09/YouTube_full-color_icon_%282017%29.svg', type: 'embed' },
+            { id: 'netflix', name: 'Netflix', color: 'bg-black', text: 'text-red-600', icon: 'https://upload.wikimedia.org/wikipedia/commons/0/08/Netflix_2015_logo.svg', type: 'external', url: 'https://www.netflix.com' },
+            { id: 'disney', name: 'Disney+', color: 'bg-blue-900', text: 'text-white', icon: 'https://upload.wikimedia.org/wikipedia/commons/3/3e/Disney%2B_logo.svg', type: 'external', url: 'https://www.disneyplus.com' },
+            { id: 'crunchyroll', name: 'Crunchyroll', color: 'bg-orange-500', text: 'text-orange-500', icon: 'https://upload.wikimedia.org/wikipedia/commons/7/75/Crunchyroll_Logo.svg', type: 'external', url: 'https://www.crunchyroll.com' },
+            { id: 'prime', name: 'Prime Video', color: 'bg-sky-600', text: 'text-sky-400', icon: 'https://upload.wikimedia.org/wikipedia/commons/1/11/Amazon_Prime_Video_logo.svg', type: 'external', url: 'https://www.primevideo.com' },
+            { id: 'hbo', name: 'Max', color: 'bg-purple-800', text: 'text-purple-400', icon: 'https://upload.wikimedia.org/wikipedia/commons/c/ce/Max_logo.svg', type: 'external', url: 'https://www.max.com' },
         ];
 
         // --- UTILIDADES ---
@@ -69,15 +71,18 @@
             const match = url.match(regExp);
             return (match && match[2].length === 11) ? match[2] : null;
         };
+        const getShareLink = (code) => {
+            const url = new URL(window.location.href);
+            url.searchParams.set('room', code);
+            return url.toString();
+        };
 
         // --- COMPONENTE: YOUTUBE PLAYER ---
         const YouTubePlayer = ({ videoId, isPlaying, timestamp, onStateChange }) => {
             const playerRef = useRef(null);
-
             useEffect(() => {
                 if (!window.YT) return;
                 if (playerRef.current) try { playerRef.current.destroy(); } catch(e){}
-
                 playerRef.current = new window.YT.Player('yt-player', {
                     height: '100%', width: '100%', videoId: videoId,
                     playerVars: { 'playsinline': 1, 'controls': 1, 'rel': 0, 'modestbranding': 1, 'origin': window.location.origin },
@@ -99,8 +104,46 @@
                     if (Math.abs(current - timestamp) > 2) playerRef.current.seekTo(timestamp, true);
                 } catch (e) {}
             }, [isPlaying, timestamp]);
-
             return <div id="yt-player" className="w-full h-full bg-black"></div>;
+        };
+
+        // --- COMPONENTE: DUMMY PLAYER (NETFLIX, ETC) ---
+        // Simula ser el reproductor del servicio
+        const DummyPlayer = ({ service, isPlaying, onTogglePlay }) => {
+            return (
+                <div className={`w-full h-full flex flex-col items-center justify-center relative overflow-hidden ${service.color}`}>
+                    {/* Fondo decorativo */}
+                    <div className="absolute inset-0 bg-[url('https://assets.nflxext.com/ffe/siteui/vlv3/ab180a27-b661-44cd-9579-9dcaf32d26dd/web/MX-es-20231009-TRIFECTA-perspective_alpha_website_large.jpg')] bg-cover opacity-20 bg-center"></div>
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+
+                    {/* Contenido Central */}
+                    <div className="relative z-10 text-center p-8 max-w-2xl">
+                        <img src={service.icon} alt={service.name} className="h-16 mx-auto mb-8 drop-shadow-2xl"/>
+                        
+                        <div className="glass p-8 rounded-2xl mb-8 border-t-4 border-white/20">
+                            <h2 className="text-3xl font-bold mb-2">Sala Sincronizada</h2>
+                            <p className="text-slate-300 mb-6">El video se reproduce en la app oficial. Usa este control para sincronizar a todos.</p>
+                            
+                            <a href={service.url} target="_blank" className="flex items-center justify-center gap-2 bg-white text-black font-bold py-3 px-8 rounded-full hover:scale-105 transition mb-6 shadow-xl">
+                                <ExternalLink size={20}/> Abrir {service.name}
+                            </a>
+
+                            {/* Control de Sincronización Simulado */}
+                            <div className="flex items-center justify-center gap-6">
+                                <button 
+                                    onClick={() => onTogglePlay(!isPlaying)}
+                                    className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${isPlaying ? 'bg-slate-800 text-white' : 'bg-white text-black scale-110 shadow-[0_0_30px_rgba(255,255,255,0.3)]'}`}
+                                >
+                                    {isPlaying ? <Pause size={32} fill="currentColor"/> : <Play size={32} fill="currentColor" className="ml-1"/>}
+                                </button>
+                            </div>
+                            <div className="mt-4 text-xs font-mono uppercase tracking-widest text-slate-500">
+                                {isPlaying ? <span className="text-green-400 flex items-center justify-center gap-2"><span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span> Reproduciendo para todos</span> : <span className="text-red-400">Pausado</span>}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
         };
 
         // --- COMPONENTE: VOICE CHAT ---
@@ -152,7 +195,7 @@
             );
         };
 
-        // --- PANTALLA: DASHBOARD (SELECCIÓN DE SERVICIO) ---
+        // --- PANTALLA: DASHBOARD ---
         const Dashboard = ({ user, onCreateParty, onJoinParty, loading }) => {
             return (
                 <div className="min-h-screen bg-slate-950 p-6 flex items-center justify-center">
@@ -168,18 +211,17 @@
                             <button onClick={() => signOut(auth)} className="text-red-400 hover:text-red-300 font-bold">Salir</button>
                         </header>
 
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 mb-12">
                             {SERVICES.map(s => (
                                 <button 
                                     key={s.id} 
                                     onClick={() => onCreateParty(s.id)}
                                     disabled={loading}
-                                    className={`service-card relative aspect-video rounded-2xl overflow-hidden group transition-all duration-300 ${s.color}`}
+                                    className={`service-card relative aspect-video rounded-2xl overflow-hidden group transition-all duration-300 ${s.color} border border-white/10`}
                                 >
-                                    <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition"></div>
-                                    <div className="relative z-10 flex flex-col items-center justify-center h-full text-white">
-                                        <span className="text-4xl font-black mb-2">{s.icon}</span>
-                                        <span className="font-bold">{s.name}</span>
+                                    <div className="absolute inset-0 bg-black/40 group-hover:bg-transparent transition"></div>
+                                    <div className="relative z-10 flex flex-col items-center justify-center h-full text-white p-6">
+                                        <img src={s.icon} className="h-12 md:h-16 object-contain drop-shadow-lg mb-4"/>
                                     </div>
                                 </button>
                             ))}
@@ -188,7 +230,7 @@
                         <div className="glass p-8 rounded-3xl flex flex-col md:flex-row items-center gap-6">
                             <div className="flex-1">
                                 <h3 className="text-xl font-bold mb-2">Unirse a una fiesta</h3>
-                                <p className="text-slate-400">Pega el código que te enviaron tus amigos.</p>
+                                <p className="text-slate-400">Pega el código o usa el link de invitación.</p>
                             </div>
                             <div className="flex gap-3 w-full md:w-auto">
                                 <input id="partyCode" placeholder="CÓDIGO (EJ: X9Y2Z)" className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-center tracking-widest outline-none focus:border-purple-500 uppercase text-white" />
@@ -222,7 +264,7 @@
 
             useEffect(() => chatRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages]);
 
-            const updateState = async (p, t) => await updateDoc(doc(db, 'artifacts', appId, 'parties', `party_${partyId}`), { isPlaying: p, timestamp: t });
+            const updateState = async (p, t) => await updateDoc(doc(db, 'artifacts', appId, 'parties', `party_${partyId}`), { isPlaying: p, timestamp: t || 0 });
             
             const loadVideo = async () => {
                 const vid = getYouTubeId(search);
@@ -238,53 +280,51 @@
                 setText('');
             };
 
-            // PREVENCIÓN DE ERROR: Si no hay datos, mostramos cargando
-            if (!partyData) return <div className="h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin mr-2"/> Cargando sala...</div>;
+            const copyShareLink = () => {
+                const link = getShareLink(partyId);
+                navigator.clipboard.writeText(link);
+                alert("Link copiado: " + link);
+            };
+
+            if (!partyData) return <div className="h-screen bg-black flex items-center justify-center text-white gap-3"><Loader2 className="animate-spin"/> Conectando...</div>;
 
             const service = SERVICES.find(s => s.id === partyData.serviceId) || SERVICES[0];
 
             return (
                 <div className="flex flex-col md:flex-row h-screen bg-black overflow-hidden">
-                    {/* ZONA IZQUIERDA: VIDEO / CONTENIDO */}
+                    {/* VIDEO AREA */}
                     <div className="flex-1 flex flex-col relative">
-                        <div className="absolute top-0 left-0 w-full z-20 p-4 flex justify-between items-center bg-gradient-to-b from-black/90 to-transparent pointer-events-none hover:pointer-events-auto transition-opacity opacity-0 hover:opacity-100">
-                             <div className="glass px-4 py-2 rounded-full flex items-center gap-2 pointer-events-auto cursor-pointer" onClick={() => navigator.clipboard.writeText(partyId)}>
-                                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                                <span className="text-sm font-mono">ID: {partyId}</span>
-                                <Copy size={14}/>
+                        {/* Header Transparente */}
+                        <div className="absolute top-0 left-0 w-full z-20 p-4 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent pointer-events-none transition-opacity opacity-0 hover:opacity-100">
+                             <div className="pointer-events-auto flex gap-2">
+                                 <button onClick={copyShareLink} className="glass px-4 py-2 rounded-full flex items-center gap-2 text-white hover:bg-white/20 transition">
+                                    <Share2 size={14}/> <span className="text-sm font-mono">Invitar</span>
+                                </button>
+                                <div className="glass px-4 py-2 rounded-full flex items-center gap-2 text-white">
+                                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                    <span className="text-sm font-mono">{partyId}</span>
+                                </div>
                             </div>
-                            <button onClick={onLeave} className="bg-red-600/80 p-2 rounded-full pointer-events-auto hover:bg-red-600"><LogOut size={18}/></button>
+                            <button onClick={onLeave} className="bg-red-600/80 p-2 rounded-full pointer-events-auto hover:bg-red-600 text-white"><LogOut size={18}/></button>
                         </div>
 
-                        <div className="flex-1 bg-slate-900 flex items-center justify-center relative">
+                        {/* Player */}
+                        <div className="flex-1 bg-slate-900 relative">
                             {service.id === 'youtube' ? (
                                 partyData.currentVideoId ? (
                                     <YouTubePlayer videoId={partyData.currentVideoId} isPlaying={partyData.isPlaying} timestamp={partyData.timestamp} onStateChange={updateState} />
                                 ) : (
-                                    <div className="text-center text-slate-500">
-                                        <Play size={64} className="mx-auto mb-4 opacity-50"/>
-                                        <p>Busca un video de YouTube abajo</p>
+                                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
+                                        <Play size={64} className="mb-4 opacity-50"/>
+                                        <p>Busca un video de YouTube para empezar</p>
                                     </div>
                                 )
                             ) : (
-                                // Pantalla para servicios externos (Netflix, Disney, etc.)
-                                <div className="text-center p-8 max-w-lg">
-                                    <div className={`w-24 h-24 ${service.color} rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl`}>
-                                        <span className="text-4xl font-black text-white">{service.icon}</span>
-                                    </div>
-                                    <h2 className="text-2xl font-bold text-white mb-2">Sala de {service.name}</h2>
-                                    <p className="text-slate-400 mb-6">
-                                        Debido a protecciones de copyright, {service.name} debe abrirse en otra pestaña.
-                                        Usen este chat para comentar mientras ven la película.
-                                    </p>
-                                    <a href={`https://www.${service.id}.com`} target="_blank" className="bg-white text-black px-6 py-3 rounded-full font-bold hover:scale-105 transition inline-block">
-                                        Abrir {service.name}
-                                    </a>
-                                </div>
+                                <DummyPlayer service={service} isPlaying={partyData.isPlaying} onTogglePlay={(val) => updateState(val, 0)} />
                             )}
                         </div>
 
-                        {/* BARRA DE CONTROL (Solo visible en YouTube) */}
+                        {/* Controls (Solo YouTube) */}
                         {service.id === 'youtube' && (
                             <div className="bg-black p-4 border-t border-slate-800 flex gap-4 items-center">
                                 <div className="flex-1 flex items-center bg-slate-900 border border-slate-700 rounded-full px-4 py-2">
@@ -295,27 +335,30 @@
                                 <VoiceChat partyId={partyId} user={user} />
                             </div>
                         )}
-                        {/* Control de voz para otros servicios */}
+                        {/* Voice Control (Otros servicios) */}
                         {service.id !== 'youtube' && (
-                             <div className="bg-black p-4 border-t border-slate-800 flex justify-center items-center">
-                                <div className="text-slate-500 text-sm mr-4">Mantén presionado para hablar -></div>
+                             <div className="bg-black p-4 border-t border-slate-800 flex justify-center items-center gap-4">
+                                <span className="text-slate-500 text-xs uppercase tracking-widest font-bold">Mantén para hablar</span>
                                 <VoiceChat partyId={partyId} user={user} />
                              </div>
                         )}
                     </div>
 
-                    {/* ZONA DERECHA: CHAT */}
+                    {/* CHAT AREA */}
                     <div className="w-full md:w-80 bg-slate-950 border-l border-slate-800 flex flex-col h-[40vh] md:h-full">
-                        <div className="p-4 border-b border-slate-800 font-bold text-slate-400 text-xs tracking-widest uppercase">Chat de Sala</div>
+                        <div className="p-4 border-b border-slate-800 font-bold text-slate-400 text-xs tracking-widest uppercase flex justify-between items-center">
+                            <span>Chat de Sala</span>
+                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-4">
                             {messages.map((m, i) => (
                                 <div key={i} className={`flex gap-3 ${m.system ? 'justify-center' : ''}`}>
-                                    {m.system ? <span className="text-[10px] bg-slate-900 text-slate-500 px-3 py-1 rounded-full">{m.text}</span> : (
+                                    {m.system ? <span className="text-[10px] bg-slate-800 text-slate-500 px-3 py-1 rounded-full border border-slate-700">{m.text}</span> : (
                                         <>
-                                            <img src={m.photo} className="w-8 h-8 rounded-full bg-slate-800"/>
+                                            <img src={m.photo} className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700"/>
                                             <div>
-                                                <div className="text-xs font-bold text-slate-400">{m.sender}</div>
-                                                <div className="text-sm text-slate-200">{m.text}</div>
+                                                <div className="text-xs font-bold text-slate-400 mb-0.5">{m.sender}</div>
+                                                <div className="text-sm text-slate-200 leading-snug">{m.text}</div>
                                             </div>
                                         </>
                                     )}
@@ -338,7 +381,17 @@
             const [activePartyId, setActivePartyId] = useState(null);
             const [loading, setLoading] = useState(false);
 
-            useEffect(() => onAuthStateChanged(auth, setUser), []);
+            useEffect(() => {
+                onAuthStateChanged(auth, async (u) => {
+                    setUser(u);
+                    // Auto-join si hay parametro en URL
+                    if (u) {
+                        const params = new URLSearchParams(window.location.search);
+                        const roomParam = params.get('room');
+                        if (roomParam) join(roomParam);
+                    }
+                });
+            }, []);
 
             const create = async (serviceId) => {
                 setLoading(true);
@@ -348,6 +401,8 @@
                         host: user.uid, serviceId, currentVideoId: '', isPlaying: false, timestamp: 0, messages: []
                     });
                     setActivePartyId(id);
+                    // Actualizar URL sin recargar
+                    window.history.pushState({}, '', `?room=${id}`);
                 } catch(e) { console.error(e); }
                 setLoading(false);
             };
@@ -355,25 +410,31 @@
             const join = async (id) => {
                 setLoading(true);
                 const d = await getDoc(doc(db, 'artifacts', appId, 'parties', `party_${id}`));
-                if (d.exists()) setActivePartyId(id);
-                else alert("Sala no existe");
+                if (d.exists()) {
+                    setActivePartyId(id);
+                } else {
+                    alert("Sala no existe");
+                }
                 setLoading(false);
             };
 
             if (!user) return (
                 <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-                    <div className="w-24 h-24 bg-gradient-to-tr from-purple-600 to-blue-600 rounded-3xl flex items-center justify-center mb-6 shadow-2xl shadow-purple-900/30">
-                        <MonitorPlay size={48} className="text-white"/>
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-purple-600 blur-[100px] opacity-20 rounded-full"></div>
+                        <div className="relative w-24 h-24 bg-gradient-to-tr from-purple-600 to-blue-600 rounded-3xl flex items-center justify-center mb-6 shadow-2xl shadow-purple-900/30 mx-auto">
+                            <MonitorPlay size={48} className="text-white"/>
+                        </div>
                     </div>
                     <h1 className="text-5xl md:text-7xl font-black text-white mb-6 tracking-tighter">StreamParty</h1>
-                    <p className="text-slate-400 text-xl mb-10 max-w-lg">Cine virtual sincronizado con amigos. YouTube, chat de voz y más.</p>
-                    <button onClick={() => signInWithPopup(auth, new GoogleAuthProvider())} className="bg-white text-slate-900 px-8 py-4 rounded-full font-bold text-lg hover:scale-105 transition flex items-center gap-3">
+                    <p className="text-slate-400 text-xl mb-10 max-w-lg mx-auto">Cine virtual con amigos. YouTube, Netflix, Crunchyroll y chat de voz en tiempo real.</p>
+                    <button onClick={() => signInWithPopup(auth, new GoogleAuthProvider())} className="bg-white text-slate-900 px-8 py-4 rounded-full font-bold text-lg hover:scale-105 transition flex items-center gap-3 mx-auto">
                         <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-6 h-6"/> Iniciar con Google
                     </button>
                 </div>
             );
 
-            if (activePartyId) return <PartyRoom partyId={activePartyId} user={user} onLeave={() => setActivePartyId(null)} />;
+            if (activePartyId) return <PartyRoom partyId={activePartyId} user={user} onLeave={() => { setActivePartyId(null); window.history.pushState({}, '', window.location.pathname); }} />;
 
             return <Dashboard user={user} onCreateParty={create} onJoinParty={join} loading={loading} />;
         };
@@ -382,5 +443,3 @@
     </script>
 </body>
 </html>
-
-
