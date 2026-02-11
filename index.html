@@ -3,28 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>StreamParty Mobile</title>
-    <meta name="theme-color" content="#000000">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>StreamParty Final</title>
+    <meta name="theme-color" content="#0f172a">
     
     <!-- Librerías -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap" rel="stylesheet">
     
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #000; color: #fff; overflow: hidden; height: 100vh; width: 100vw; }
-        .glass { background: rgba(20, 20, 20, 0.85); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.1); }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .mic-wave { animation: wave 1s infinite ease-in-out; }
-        @keyframes wave { 0%, 100% { height: 10%; } 50% { height: 100%; } }
-        /* Ajuste para móviles: Chat ocupa el espacio restante */
-        .mobile-layout { display: flex; flex-direction: column; height: 100%; }
-        @media (min-width: 768px) { .mobile-layout { flex-direction: row; } }
-        iframe { border: none; }
+        body { font-family: 'Outfit', sans-serif; background-color: #020617; color: #fff; overflow: hidden; height: 100vh; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        
+        /* Animaciones */
+        .fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Layout Responsivo */
+        .app-layout { display: flex; flex-direction: column; height: 100%; }
+        @media (min-width: 1024px) { .app-layout { flex-direction: row; } }
+        
+        .mic-active { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.3); }
     </style>
 </head>
 <body>
@@ -35,13 +37,13 @@
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
         import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
-        import { getFirestore, doc, onSnapshot, updateDoc, arrayUnion, setDoc, arrayRemove, collection, query, orderBy, limit, addDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+        import { getFirestore, doc, onSnapshot, updateDoc, arrayUnion, setDoc, arrayRemove, collection } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
         import { 
             Play, Pause, Users, LogOut, Send, Mic, MicOff, Search, Loader2, 
-            Crown, Link as LinkIcon, Volume2, Globe, ExternalLink, Zap, MonitorPlay, AlertTriangle, X
+            Crown, Zap, Link, Volume2, MonitorPlay, ExternalLink, Copy, Check
         } from 'https://esm.sh/lucide-react@0.344.0';
 
-        // --- CONFIGURACIÓN FIREBASE ---
+        // --- CONFIGURACIÓN FIREBASE (NO TOCAR) ---
         const firebaseConfig = {
             apiKey: "AIzaSyAJNTDKf8RrUQ_bvt9z1FD3hBQ9TtgFcuE",
             authDomain: "streaming-72bc2.firebaseapp.com",
@@ -54,7 +56,7 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const APP_ID = 'stream-party-v8-responsive'; 
+        const APP_ID = 'sp-final-v9'; 
 
         // --- UTILIDADES ---
         const generateId = () => Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -64,125 +66,196 @@
             return (match && match[2].length === 11) ? match[2] : null;
         };
 
-        // --- GESTOR DE AUDIO P2P ---
-        const useVoiceChat = (user, partyId, activeUsers) => {
-            const [peer, setPeer] = useState(null);
-            const [myStream, setMyStream] = useState(null);
-            const [isMuted, setIsMuted] = useState(false);
-            const audioGridRef = useRef(null);
+        // --- HOOK DE AUDIO (CHAT DE VOZ) ---
+        const useVoice = (user, partyId, users) => {
+            const [muted, setMuted] = useState(false);
+            const [stream, setStream] = useState(null);
+            const peerRef = useRef(null);
+            const containerRef = useRef(null);
 
             useEffect(() => {
-                if (!user || !partyId) return;
-                const newPeer = new window.Peer(user.uid.substring(0, 10) + partyId);
-                newPeer.on('open', () => {
-                    setPeer(newPeer);
-                    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => setMyStream(stream)).catch(console.error);
+                if(!user || !partyId) return;
+                const peer = new window.Peer(user.uid.substring(0,8) + partyId);
+                
+                peer.on('open', () => {
+                    navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
+                        setStream(s);
+                        peerRef.current = peer;
+                        
+                        peer.on('call', call => {
+                            call.answer(s);
+                            call.on('stream', rem => addAudio(rem));
+                        });
+                    }).catch(e => console.log("Sin microfono"));
                 });
-                newPeer.on('call', call => {
-                    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-                        call.answer(stream);
-                        call.on('stream', remote => addAudio(call.peer, remote));
-                    });
-                });
-                return () => { newPeer.destroy(); if(myStream) myStream.getTracks().forEach(t=>t.stop()); };
+
+                return () => { peer.destroy(); if(stream) stream.getTracks().forEach(t=>t.stop()); };
             }, [user, partyId]);
 
             useEffect(() => {
-                if (!peer || !myStream || !activeUsers) return;
-                activeUsers.forEach(u => {
-                    const pid = u.uid.substring(0, 10) + partyId;
-                    if (u.uid !== user.uid) {
-                        const call = peer.call(pid, myStream);
-                        if(call) call.on('stream', remote => addAudio(pid, remote));
+                if(!peerRef.current || !stream || !users) return;
+                users.forEach(u => {
+                    if(u.uid !== user.uid) {
+                        const call = peerRef.current.call(u.uid.substring(0,8) + partyId, stream);
+                        if(call) call.on('stream', rem => addAudio(rem));
                     }
                 });
-            }, [activeUsers, peer, myStream]);
+            }, [users]);
 
-            const addAudio = (id, stream) => {
-                if (document.getElementById(`audio-${id}`)) return;
-                const a = document.createElement('audio');
-                a.id = `audio-${id}`; a.srcObject = stream; a.autoplay = true;
-                if(audioGridRef.current) audioGridRef.current.appendChild(a);
+            const addAudio = (st) => {
+                const aud = document.createElement('audio');
+                aud.srcObject = st; aud.autoplay = true;
+                if(containerRef.current) containerRef.current.appendChild(aud);
             };
 
-            const toggleMute = () => {
-                if (myStream) {
-                    const track = myStream.getAudioTracks()[0];
-                    track.enabled = !track.enabled;
-                    setIsMuted(!track.enabled);
+            const toggle = () => {
+                if(stream) {
+                    stream.getAudioTracks()[0].enabled = !stream.getAudioTracks()[0].enabled;
+                    setMuted(!stream.getAudioTracks()[0].enabled);
                 }
             };
-            return { isMuted, toggleMute, audioGridRef };
+
+            return { muted, toggle, containerRef };
         };
 
-        // --- COMPONENTE: YOUTUBE PLAYER ---
-        const YouTubePlayer = ({ videoId, partyState, isHost, onUpdate }) => {
-            const playerRef = useRef(null);
+        // --- REPRODUCTOR YOUTUBE ---
+        const YTPlayer = ({ videoId, state, isHost, onUpdate }) => {
+            const ref = useRef(null);
+            
             useEffect(() => {
-                if (!window.YT) return;
-                playerRef.current = new window.YT.Player('yt-player', {
+                if(!window.YT) return;
+                ref.current = new window.YT.Player('yt-player', {
                     height: '100%', width: '100%', videoId: videoId,
-                    playerVars: { 'playsinline': 1, 'controls': 1, 'rel': 0, 'modestbranding': 1, 'origin': window.location.origin },
+                    playerVars: { playsinline: 1, controls: 1, rel: 0, modestbranding: 1, origin: window.location.origin },
                     events: {
-                        'onReady': e => { if(partyState.isPlaying) e.target.playVideo(); },
-                        'onStateChange': e => { if(isHost && (e.data===1 || e.data===2)) onUpdate(e.data===1, e.target.getCurrentTime()); }
+                        'onReady': e => { if(state.isPlaying) e.target.playVideo(); },
+                        'onStateChange': e => { if(isHost && (e.data===1||e.data===2)) onUpdate(e.data===1, e.target.getCurrentTime()); }
                     }
                 });
                 const i = setInterval(() => {
-                    if(!playerRef.current?.getPlayerState || isHost) return;
-                    const t = partyState.isPlaying ? partyState.timestamp + (Date.now()-partyState.lastUpdated)/1000 : partyState.timestamp;
-                    if(Math.abs(playerRef.current.getCurrentTime() - t) > 2) playerRef.current.seekTo(t, true);
-                    const s = playerRef.current.getPlayerState();
-                    if(partyState.isPlaying && s!==1 && s!==3) playerRef.current.playVideo();
-                    if(!partyState.isPlaying && s===1) playerRef.current.pauseVideo();
+                    if(!ref.current?.getPlayerState || isHost) return;
+                    const t = state.isPlaying ? state.timestamp + (Date.now()-state.lastUpdated)/1000 : state.timestamp;
+                    if(Math.abs(ref.current.getCurrentTime() - t) > 2) ref.current.seekTo(t, true);
+                    const s = ref.current.getPlayerState();
+                    if(state.isPlaying && s!==1 && s!==3) ref.current.playVideo();
+                    if(!state.isPlaying && s===1) ref.current.pauseVideo();
                 }, 1000);
-                return () => { clearInterval(i); try{playerRef.current.destroy()}catch(e){} };
+                return () => { clearInterval(i); try{ref.current.destroy()}catch(e){} };
             }, [videoId]);
-            return <div id="yt-player" className="w-full h-full"></div>;
+
+            return <div id="yt-player" className="w-full h-full bg-black"></div>;
         };
 
-        // --- COMPONENTE: NAVEGADOR INTEGRADO (EXPERIMENTAL) ---
-        const WebBrowserPlayer = ({ url, isHost }) => {
-            const [blocked, setBlocked] = useState(false);
+        // --- CONTROLADOR CRUNCHYROLL (SYNC TIMER) ---
+        const CrunchyController = ({ state, isHost, onUpdate }) => {
+            const [time, setTime] = useState(state.timestamp);
 
-            // Intentamos cargar. Si falla (por CSP), el usuario verá blanco o error.
+            useEffect(() => {
+                let i;
+                if(state.isPlaying) i = setInterval(() => setTime(prev => prev + 1), 1000);
+                else setTime(state.timestamp);
+                return () => clearInterval(i);
+            }, [state.isPlaying, state.lastUpdated]);
+
+            // Resync fuerte
+            useEffect(() => {
+                const target = state.isPlaying ? state.timestamp + (Date.now() - state.lastUpdated)/1000 : state.timestamp;
+                setTime(Math.floor(target));
+            }, [state.lastUpdated]);
+
+            const fmt = s => {
+                const m = Math.floor(s/60); const sc = Math.floor(s%60);
+                return `${m}:${sc<10?'0':''}${sc}`;
+            }
+
             return (
-                <div className="w-full h-full relative bg-white">
-                    {!blocked ? (
-                        <iframe 
-                            src={url} 
-                            className="w-full h-full"
-                            allow="autoplay; encrypted-media; fullscreen"
-                            onError={() => setBlocked(true)}
-                        />
-                    ) : (
-                        <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
-                            <AlertTriangle size={48} className="text-yellow-500 mb-4"/>
-                            <h3 className="text-xl font-bold mb-2">Sitio Protegido</h3>
-                            <p className="text-slate-400 mb-6">Este sitio web bloquea la reproducción dentro de otras apps.</p>
-                            <a href={url} target="_blank" className="bg-blue-600 px-6 py-3 rounded-full font-bold">Abrir en Pestaña Nueva</a>
+                <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-[url('https://wallpapers.com/images/hd/anime-scenery-background-1920-x-1080-h7k2d1k9q2k9k9k9.jpg')] bg-cover opacity-20"></div>
+                    <div className="z-10 text-center p-6">
+                        <div className="w-20 h-20 bg-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-orange-500/50">
+                            <Zap size={40} className="text-white"/>
                         </div>
-                    )}
-                    
-                    {/* Botón de pánico si sale blanco */}
-                    <div className="absolute top-2 right-2 z-50">
-                        <button onClick={() => setBlocked(true)} className="bg-black/50 p-2 rounded-full text-white text-xs backdrop-blur-md border border-white/20">
-                            ¿No carga?
-                        </button>
+                        <h2 className="text-3xl font-black text-white mb-2 tracking-tight">Sincronizador</h2>
+                        <p className="text-zinc-400 mb-8 max-w-md">Abran el mismo capítulo en otra pestaña y usen este reloj para ir al mismo segundo.</p>
+                        
+                        <div className="text-7xl font-mono font-bold text-white mb-8 tabular-nums drop-shadow-lg">
+                            {fmt(time)}
+                        </div>
+
+                        {isHost ? (
+                            <button onClick={() => onUpdate(!state.isPlaying)} className={`w-20 h-20 rounded-full flex items-center justify-center transition-all ${state.isPlaying ? 'bg-zinc-800' : 'bg-white shadow-[0_0_40px_rgba(255,255,255,0.4)]'}`}>
+                                {state.isPlaying ? <Pause size={32}/> : <Play size={32} fill="black" className="ml-1"/>}
+                            </button>
+                        ) : (
+                            <div className="px-6 py-2 bg-orange-500/20 text-orange-400 rounded-full font-bold text-sm animate-pulse border border-orange-500/50">
+                                Sincronizado con Host
+                            </div>
+                        )}
+                        
+                        <div className="mt-8 flex justify-center">
+                            <a href="https://www.crunchyroll.com" target="_blank" className="flex items-center gap-2 text-zinc-400 hover:text-white transition text-sm font-medium">
+                                <ExternalLink size={14}/> Abrir Crunchyroll
+                            </a>
+                        </div>
                     </div>
                 </div>
             );
         };
 
-        // --- SALA PRINCIPAL ---
+        // --- DASHBOARD (SELECCIÓN) ---
+        const Dashboard = ({ user, create, join }) => {
+            const [code, setCode] = useState('');
+            
+            return (
+                <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+                    <div className="w-full max-w-5xl">
+                        <header className="flex justify-between items-center mb-12">
+                            <div className="flex items-center gap-4">
+                                <img src={user.photoURL} className="w-12 h-12 rounded-full border-2 border-slate-700"/>
+                                <div>
+                                    <h1 className="text-2xl font-bold text-white">Hola, {user.displayName.split(' ')[0]}</h1>
+                                    <p className="text-slate-400 text-sm">Elige tu plataforma</p>
+                                </div>
+                            </div>
+                            <button onClick={() => signOut(auth)} className="text-red-400 hover:text-red-300 text-sm font-bold">Salir</button>
+                        </header>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+                            <div onClick={() => create('youtube')} className="bg-red-600 hover:bg-red-700 p-8 rounded-3xl cursor-pointer transition transform hover:scale-[1.02] relative overflow-hidden group">
+                                <MonitorPlay size={64} className="text-white/20 absolute -right-4 -bottom-4 group-hover:scale-150 transition duration-500"/>
+                                <h3 className="text-3xl font-black text-white mb-2">YouTube</h3>
+                                <p className="text-red-100">Ver videos, música y shorts sincronizados.</p>
+                            </div>
+                            <div onClick={() => create('crunchyroll')} className="bg-orange-500 hover:bg-orange-600 p-8 rounded-3xl cursor-pointer transition transform hover:scale-[1.02] relative overflow-hidden group">
+                                <Zap size={64} className="text-black/10 absolute -right-4 -bottom-4 group-hover:scale-150 transition duration-500"/>
+                                <h3 className="text-3xl font-black text-white mb-2">Crunchyroll</h3>
+                                <p className="text-orange-100">Modo control remoto para anime.</p>
+                            </div>
+                        </div>
+
+                        <div className="glass p-6 rounded-2xl flex flex-col md:flex-row gap-4 items-center">
+                            <div className="flex-1">
+                                <h4 className="font-bold text-lg">¿Tienes un código?</h4>
+                                <p className="text-slate-400 text-sm">Únete a la fiesta de un amigo.</p>
+                            </div>
+                            <div className="flex gap-2 w-full md:w-auto">
+                                <input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="CÓDIGO" className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-center tracking-widest text-white outline-none focus:border-blue-500 uppercase flex-1"/>
+                                <button onClick={() => join(code)} className="bg-white text-slate-900 font-bold px-6 rounded-xl hover:bg-slate-200">ENTRAR</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- SALA DE FIESTA ---
         const PartyRoom = ({ partyId, user, onLeave }) => {
             const [party, setParty] = useState(null);
-            const [messages, setMessages] = useState([]);
-            const [input, setInput] = useState('');
+            const [msgs, setMsgs] = useState([]);
+            const [txt, setTxt] = useState('');
             const [search, setSearch] = useState('');
-            const [showUsers, setShowUsers] = useState(false);
             const chatRef = useRef(null);
-            const { isMuted, toggleMute, audioGridRef } = useVoiceChat(user, partyId, party?.users);
+            const { muted, toggle, containerRef } = useVoice(user, partyId, party?.users);
             
             const isHost = party?.hostId === user.uid;
 
@@ -190,135 +263,115 @@
                 const ref = doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`);
                 updateDoc(ref, { users: arrayUnion({ uid: user.uid, name: user.displayName, photo: user.photoURL }) });
                 const unsub = onSnapshot(ref, d => {
-                    if(d.exists()) { setParty(d.data()); setMessages(d.data().messages || []); }
-                    else { alert("Sala cerrada"); onLeave(); }
+                    if(d.exists()) { setParty(d.data()); setMsgs(d.data().messages || []); }
+                    else { alert("Sala terminada"); onLeave(); }
                 });
                 return () => { updateDoc(ref, { users: arrayRemove({ uid: user.uid, name: user.displayName, photo: user.photoURL }) }); unsub(); };
             }, [partyId]);
 
-            useEffect(() => chatRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages]);
+            useEffect(() => chatRef.current?.scrollIntoView({ behavior: 'smooth' }), [msgs]);
 
-            const handleUpdate = async (playing, time) => {
-                await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
-                    isPlaying: playing, timestamp: time, lastUpdated: Date.now()
+            const updateState = async (play, t) => {
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), { 
+                    isPlaying: play, timestamp: t, lastUpdated: Date.now(),
+                    messages: arrayUnion({ id: Date.now(), system: true, text: play ? '▶️ Reanudado' : '⏸️ Pausado' })
                 });
             };
 
-            const loadContent = async () => {
-                if(!isHost) return;
-                const ytId = getYouTubeId(search);
-                // Si es youtube ID, guardamos ID. Si no, guardamos URL completa para el iframe.
+            const loadYt = async () => {
+                const id = getYouTubeId(search);
+                if(!id) return alert("Link inválido de YouTube");
                 await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
-                    currentVideoId: ytId || search, // search actúa como URL directa
-                    service: ytId ? 'youtube' : 'web',
-                    isPlaying: true, timestamp: 0, lastUpdated: Date.now(),
-                    messages: arrayUnion({ id: Date.now(), system: true, text: '📺 Contenido cambiado' })
+                    currentVideoId: id, isPlaying: true, timestamp: 0, lastUpdated: Date.now(),
+                    messages: arrayUnion({ id: Date.now(), system: true, text: '📺 Video cambiado' })
                 });
                 setSearch('');
             };
 
             const send = async (e) => {
-                e.preventDefault(); if(!input.trim()) return;
+                e.preventDefault(); if(!txt.trim()) return;
                 await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
-                    messages: arrayUnion({ id: Date.now(), text: input, sender: user.displayName, photo: user.photoURL, timestamp: Date.now() })
+                    messages: arrayUnion({ id: Date.now(), text: txt, sender: user.displayName, photo: user.photoURL, timestamp: Date.now() })
                 });
-                setInput('');
+                setTxt('');
             };
 
-            if(!party) return <div className="h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin"/></div>;
+            const copyCode = () => {
+                navigator.clipboard.writeText(partyId);
+                alert("Código copiado: " + partyId);
+            };
+
+            if(!party) return <div className="h-screen bg-slate-950 flex items-center justify-center text-white"><Loader2 className="animate-spin mr-2"/> Entrando...</div>;
 
             return (
-                <div className="mobile-layout bg-black h-screen w-full overflow-hidden">
-                    <div ref={audioGridRef} className="hidden"></div>
+                <div className="app-layout bg-black">
+                    <div ref={containerRef} className="hidden"></div>
 
-                    {/* 1. SECCIÓN VIDEO (Arriba en móvil, Izquierda en PC) */}
-                    <div className="w-full md:flex-1 h-[35vh] md:h-full relative flex flex-col bg-black z-10 shadow-xl">
-                        {/* Header Flotante */}
-                        <div className="absolute top-0 left-0 w-full p-2 md:p-4 flex justify-between items-start z-20 pointer-events-none bg-gradient-to-b from-black/80 to-transparent">
+                    {/* ZONA PRINCIPAL */}
+                    <div className="flex-1 flex flex-col relative bg-zinc-950">
+                        {/* Header Overlay */}
+                        <div className="absolute top-0 left-0 w-full p-4 z-20 flex justify-between pointer-events-none">
                             <div className="flex gap-2 pointer-events-auto">
-                                <div className="glass px-3 py-1.5 rounded-full flex items-center gap-2 cursor-pointer" onClick={() => {navigator.clipboard.writeText(window.location.href); alert("Link copiado")}}>
-                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                                    <span className="text-xs font-bold tracking-widest hidden md:inline">INVITAR</span>
-                                    <LinkIcon size={14}/>
+                                <div onClick={copyCode} className="glass px-3 py-1.5 rounded-full flex items-center gap-2 cursor-pointer hover:bg-white/10 text-xs font-bold tracking-widest text-zinc-300">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> {partyId} <Copy size={12}/>
                                 </div>
-                                <button onClick={toggleMute} className={`glass px-3 py-1.5 rounded-full ${isMuted?'text-red-400':'text-green-400'}`}>
-                                    {isMuted ? <MicOff size={14}/> : <Mic size={14}/>}
+                                <button onClick={toggle} className={`glass p-1.5 rounded-full ${!muted ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'text-red-400'}`}>
+                                    {!muted ? <Mic size={14}/> : <MicOff size={14}/>}
                                 </button>
                             </div>
-                            <div className="flex gap-2 pointer-events-auto">
-                                <button onClick={()=>setShowUsers(!showUsers)} className="glass p-2 rounded-full md:hidden relative">
-                                    <Users size={16}/>
-                                    <span className="absolute -top-1 -right-1 bg-red-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center">{party.users?.length}</span>
-                                </button>
-                                <button onClick={onLeave} className="glass p-2 rounded-full hover:bg-red-600/50"><LogOut size={16}/></button>
-                            </div>
+                            <button onClick={onLeave} className="glass p-2 rounded-full hover:bg-red-600/50 pointer-events-auto"><LogOut size={16}/></button>
                         </div>
 
-                        {/* Player Container */}
-                        <div className="flex-1 relative">
-                            {party.currentVideoId ? (
-                                party.service === 'youtube' ? (
-                                    <YouTubePlayer videoId={party.currentVideoId} partyState={party} isHost={isHost} onUpdate={handleUpdate} />
+                        {/* Player */}
+                        <div className="flex-1 relative flex items-center justify-center">
+                            {party.service === 'youtube' ? (
+                                party.currentVideoId ? (
+                                    <YTPlayer videoId={party.currentVideoId} state={party} isHost={isHost} onUpdate={updateState}/>
                                 ) : (
-                                    <WebBrowserPlayer url={party.currentVideoId} isHost={isHost} />
+                                    <div className="text-center opacity-30">
+                                        <Search size={48} className="mx-auto mb-2"/>
+                                        <p>Busca un video</p>
+                                    </div>
                                 )
                             ) : (
-                                <div className="h-full flex flex-col items-center justify-center text-slate-500 bg-slate-900">
-                                    <MonitorPlay size={48} className="mb-4 opacity-50"/>
-                                    <p className="text-sm">Esperando contenido...</p>
-                                </div>
+                                <CrunchyController state={party} isHost={isHost} onUpdate={updateState}/>
                             )}
                         </div>
 
-                        {/* Barra de Control (Host Only) - Ahora compacta para móvil */}
-                        {isHost && (
-                            <div className="p-2 md:p-4 bg-slate-900 border-t border-white/10 flex gap-2 items-center">
-                                <div className="flex-1 bg-black/50 border border-slate-700 rounded-full px-3 py-2 flex items-center gap-2">
-                                    <Globe size={14} className="text-slate-400"/>
-                                    <input 
-                                        className="bg-transparent border-none outline-none w-full text-xs md:text-sm text-white" 
-                                        placeholder="Link de YouTube, Crunchyroll, etc..." 
-                                        value={search} onChange={e=>setSearch(e.target.value)}
-                                    />
+                        {/* Controles (Solo YouTube & Host) */}
+                        {party.service === 'youtube' && isHost && (
+                            <div className="p-4 bg-zinc-900 border-t border-white/5 flex gap-2">
+                                <div className="flex-1 bg-black border border-zinc-700 rounded-full px-4 py-2 flex items-center gap-2">
+                                    <Search size={16} className="text-zinc-500"/>
+                                    <input className="bg-transparent border-none outline-none w-full text-sm" placeholder="Link de YouTube..." value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&loadYt()}/>
                                 </div>
-                                <button onClick={loadContent} className="bg-purple-600 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap">IR</button>
+                                <button onClick={loadYt} className="bg-white text-black font-bold px-4 rounded-full text-xs hover:scale-105 transition">VER</button>
                             </div>
                         )}
                     </div>
 
-                    {/* 2. SECCIÓN CHAT (Abajo en móvil, Derecha en PC) */}
-                    <div className="flex-1 md:w-80 md:flex-none flex flex-col bg-slate-950 border-t md:border-t-0 md:border-l border-slate-800 min-h-0 relative">
-                        
-                        {/* Lista de Usuarios (Overlay en móvil) */}
-                        {showUsers && (
-                            <div className="absolute inset-0 bg-slate-900/95 z-30 p-4 animate-fade-in md:hidden">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h3 className="font-bold">Usuarios en Sala</h3>
-                                    <button onClick={()=>setShowUsers(false)}><X/></button>
-                                </div>
-                                {party.users?.map((u,i) => (
-                                    <div key={i} className="flex items-center gap-3 p-2 border-b border-white/5">
-                                        <img src={u.photo} className="w-8 h-8 rounded-full"/>
-                                        <span>{u.name}</span>
-                                        {u.uid===party.hostId && <Crown size={14} className="text-yellow-400"/>}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                    {/* BARRA LATERAL (CHAT) */}
+                    <div className="h-[40vh] lg:h-full lg:w-96 bg-slate-950 border-t lg:border-t-0 lg:border-l border-white/10 flex flex-col">
+                        {/* Lista Usuarios */}
+                        <div className="h-14 border-b border-white/5 flex items-center px-4 gap-2 overflow-x-auto hide-scroll">
+                            {party.users?.map((u, i) => (
+                                <img key={i} src={u.photo} className="w-8 h-8 rounded-full border border-white/10" title={u.name}/>
+                            ))}
+                        </div>
 
-                        {/* Chat Messages */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
-                            {messages.map((m, i) => (
-                                <div key={i} className={`flex flex-col ${m.system ? 'items-center opacity-60 my-2' : ''}`}>
-                                    {m.system ? <span className="text-[10px] bg-white/10 px-2 py-1 rounded-full">{m.text}</span> : (
-                                        <div className="flex gap-2">
-                                            <img src={m.photo} className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-slate-800 flex-shrink-0"/>
-                                            <div className="min-w-0">
+                        {/* Mensajes */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                            {msgs.map((m, i) => (
+                                <div key={i} className={`flex flex-col ${m.system ? 'items-center opacity-50 text-[10px] uppercase tracking-widest my-2' : ''}`}>
+                                    {m.system ? m.text : (
+                                        <div className="flex gap-3 fade-in">
+                                            <img src={m.photo} className="w-8 h-8 rounded-full bg-zinc-800"/>
+                                            <div>
                                                 <div className="flex items-baseline gap-2">
-                                                    <span className="text-xs font-bold text-slate-300">{m.sender}</span>
-                                                    <span className="text-[9px] text-slate-600">{new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                                    <span className="text-xs font-bold text-zinc-400">{m.sender}</span>
+                                                    <span className="text-[9px] text-zinc-600">{new Date(m.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
                                                 </div>
-                                                <p className="text-sm text-slate-200 break-words leading-tight">{m.text}</p>
+                                                <p className="text-sm text-zinc-200">{m.text}</p>
                                             </div>
                                         </div>
                                     )}
@@ -327,16 +380,10 @@
                             <div ref={chatRef}></div>
                         </div>
 
-                        {/* Input Area */}
-                        <form onSubmit={send} className="p-2 md:p-3 bg-slate-900 border-t border-white/10 flex gap-2 items-center safe-area-pb">
-                            <input 
-                                className="flex-1 bg-black border border-slate-700 rounded-full px-4 py-2.5 text-sm focus:border-purple-500 outline-none transition" 
-                                placeholder="Di algo..." 
-                                value={input} onChange={e=>setInput(e.target.value)}
-                            />
-                            <button type="submit" className="p-2.5 bg-purple-600 rounded-full text-white shadow-lg hover:bg-purple-500 active:scale-95 transition">
-                                <Send size={18}/>
-                            </button>
+                        {/* Input */}
+                        <form onSubmit={send} className="p-3 border-t border-white/5 flex gap-2 bg-slate-900">
+                            <input className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none transition" placeholder="Chat..." value={txt} onChange={e=>setTxt(e.target.value)}/>
+                            <button type="submit" className="p-2 bg-blue-600 rounded-lg"><Send size={16}/></button>
                         </form>
                     </div>
                 </div>
@@ -347,57 +394,39 @@
             const [user, setUser] = useState(null);
             const [activePartyId, setActivePartyId] = useState(null);
 
-            useEffect(() => {
-                onAuthStateChanged(auth, u => {
-                    setUser(u);
-                    const p = new URLSearchParams(window.location.search).get('room');
-                    if(u && p) setActivePartyId(p);
-                });
-            }, []);
+            useEffect(() => onAuthStateChanged(auth, u => {
+                setUser(u);
+                const p = new URLSearchParams(window.location.search).get('room');
+                if(u && p) setActivePartyId(p);
+            }), []);
 
-            const create = async () => {
+            const create = async (service) => {
                 const id = generateId();
                 await setDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${id}`), {
-                    hostId: user.uid, currentVideoId: '', service: 'youtube', isPlaying: false, timestamp: 0, lastUpdated: Date.now(), users: [], messages: []
+                    hostId: user.uid, service, currentVideoId: '', isPlaying: false, timestamp: 0, lastUpdated: Date.now(), users: [], messages: []
                 });
                 setActivePartyId(id);
                 window.history.pushState({}, '', `?room=${id}`);
             };
 
+            const join = async (id) => {
+                if(!id) return;
+                setActivePartyId(id);
+            };
+
             if (!user) return (
-                <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-                    <div className="w-20 h-20 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mb-6 shadow-2xl animate-bounce">
-                        <Zap size={40} className="text-white"/>
+                <div className="min-h-screen bg-black flex items-center justify-center p-6 text-center">
+                    <div className="glass p-10 rounded-3xl max-w-sm w-full border-t border-white/10">
+                        <h1 className="text-5xl font-black mb-2 tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600">StreamParty</h1>
+                        <p className="text-slate-400 mb-8 font-medium">Versión Final v9</p>
+                        <button onClick={() => signInWithPopup(auth, new GoogleAuthProvider())} className="w-full bg-white text-black font-bold py-3 rounded-xl hover:scale-[1.02] transition">Entrar con Google</button>
                     </div>
-                    <h1 className="text-4xl font-black mb-2 tracking-tighter text-white">StreamParty</h1>
-                    <p className="text-slate-400 mb-8 font-medium text-sm">Tu cine de bolsillo con amigos</p>
-                    <button onClick={() => signInWithPopup(auth, new GoogleAuthProvider())} className="bg-white text-black font-bold py-3 px-8 rounded-full shadow-lg active:scale-95 transition flex items-center gap-2">
-                        <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5"/> Entrar con Google
-                    </button>
                 </div>
             );
 
             if (activePartyId) return <PartyRoom partyId={activePartyId} user={user} onLeave={() => {setActivePartyId(null); window.history.pushState({}, '', window.location.pathname);}} />;
 
-            return (
-                <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
-                    <div className="w-full max-w-sm bg-slate-900 p-6 rounded-3xl border border-white/5 shadow-2xl text-center">
-                        <img src={user.photoURL} className="w-16 h-16 rounded-full mx-auto border-2 border-purple-500 mb-4"/>
-                        <h2 className="text-xl font-bold text-white mb-6">Hola, {user.displayName.split(' ')[0]}</h2>
-                        
-                        <button onClick={create} className="w-full bg-gradient-to-r from-purple-600 to-pink-600 py-3.5 rounded-xl font-bold text-white shadow-lg active:scale-95 transition mb-4 flex justify-center items-center gap-2">
-                            <Zap size={18}/> CREAR SALA
-                        </button>
-                        
-                        <div className="flex gap-2 mb-6">
-                            <input id="code" placeholder="CÓDIGO" className="bg-black border border-slate-700 rounded-xl px-4 flex-1 text-center font-mono uppercase focus:border-purple-500 outline-none text-white text-sm"/>
-                            <button onClick={() => setActivePartyId(document.getElementById('code').value.toUpperCase())} className="bg-slate-800 text-white px-4 rounded-xl font-bold text-sm">ENTRAR</button>
-                        </div>
-                        
-                        <button onClick={() => signOut(auth)} className="text-xs text-red-400 font-medium">Cerrar Sesión</button>
-                    </div>
-                </div>
-            );
+            return <Dashboard user={user} create={create} join={join} />;
         };
 
         createRoot(document.getElementById('root')).render(<App />);
