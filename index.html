@@ -3,34 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>StreamParty Pro</title>
-    <meta name="theme-color" content="#0f172a">
+    <title>StreamParty Premium</title>
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     
     <!-- Librerías -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: '#0a0a0a',
+                        card: '#171717',
+                        primary: '#6366f1', // Indigo
+                        accent: '#ec4899'   // Pink
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+
     <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #020617; color: #fff; overflow: hidden; height: 100vh; }
-        .glass { background: rgba(30, 41, 59, 0.75); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); }
-        .glass-panel { background: #0f172a; border-left: 1px solid rgba(255,255,255,0.05); }
-        .hide-scroll::-webkit-scrollbar { display: none; }
+        body { background-color: #000; color: #fff; overflow: hidden; height: 100vh; width: 100vw; }
         
-        /* Efectos */
-        .glow-hover:hover { box-shadow: 0 0 20px rgba(124, 58, 237, 0.4); }
-        .service-card { transition: all 0.3s ease; }
-        .service-card:hover { transform: translateY(-4px); }
+        /* Scrollbar oculta pero funcional */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Efectos Glass */
+        .glass-panel { background: rgba(23, 23, 23, 0.8); backdrop-filter: blur(12px); border-top: 1px solid rgba(255,255,255,0.1); }
         
         /* Iframe seguro */
         .web-frame { width: 100%; height: 100%; border: none; background: #fff; }
+
+        /* Layout Responsivo Preciso */
+        .app-container { display: flex; flex-direction: column; height: 100%; }
         
-        /* Animaciones */
-        @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
-        .live-dot { animation: pulse-ring 2s infinite; }
+        /* En PC: Fila (Video | Chat) */
+        @media (min-width: 1024px) { 
+            .app-container { flex-direction: row; } 
+            .video-section { flex: 1; height: 100%; }
+            .chat-section { width: 350px; border-left: 1px solid #333; }
+        }
+
+        /* En Móvil: Columna (Video Arriba | Chat Abajo) */
+        @media (max-width: 1023px) {
+            .video-section { flex-shrink: 0; width: 100%; aspect-ratio: 16/9; background: #000; position: relative; z-index: 20; }
+            /* Si es modo Web (no youtube), damos más altura en móvil para navegar */
+            .video-section.web-mode { height: 60vh; aspect-ratio: auto; }
+            .chat-section { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #0a0a0a; }
+        }
+
+        .mic-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
     </style>
 </head>
 <body>
@@ -44,8 +77,7 @@
         import { getFirestore, doc, onSnapshot, updateDoc, arrayUnion, setDoc, arrayRemove, collection } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
         import { 
             Play, Pause, Users, LogOut, Send, Mic, MicOff, Search, Loader2, 
-            Crown, Zap, Link, Volume2, MonitorPlay, ExternalLink, Copy, 
-            LayoutTemplate, MessageSquare, ChevronRight, Globe
+            Crown, Zap, Link, Globe, ExternalLink, Copy, ChevronLeft, LayoutGrid, Monitor
         } from 'https://esm.sh/lucide-react@0.344.0';
 
         // --- CONFIGURACIÓN FIREBASE ---
@@ -61,19 +93,17 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const APP_ID = 'sp-v11-final-unified'; 
+        const APP_ID = 'sp-v12-ux-fix'; 
 
-        // --- SERVICIOS DISPONIBLES ---
+        // --- DATA DE SERVICIOS ---
         const SERVICES = [
-            { id: 'youtube', name: 'YouTube', color: 'from-red-600 to-red-800', icon: 'fa-youtube', url: '' },
-            { id: 'crunchyroll', name: 'Crunchyroll', color: 'from-orange-500 to-orange-700', icon: 'fa-bolt', url: 'https://www.crunchyroll.com' },
-            { id: 'netflix', name: 'Netflix', color: 'from-red-800 to-black', icon: 'fa-n', url: 'https://www.netflix.com' },
-            { id: 'twitch', name: 'Twitch', color: 'from-purple-600 to-purple-900', icon: 'fa-twitch', url: 'https://www.twitch.tv' },
-            { id: 'disney', name: 'Disney+', color: 'from-blue-600 to-blue-900', icon: 'fa-d', url: 'https://www.disneyplus.com' },
-            { id: 'web', name: 'Navegador', color: 'from-slate-600 to-slate-800', icon: 'fa-globe', url: 'https://www.google.com' }
+            { id: 'youtube', name: 'YouTube', color: 'bg-red-600', icon: 'fa-youtube', url: '' },
+            { id: 'crunchyroll', name: 'Crunchyroll', color: 'bg-orange-500', icon: 'fa-bolt', url: 'https://www.crunchyroll.com' },
+            { id: 'netflix', name: 'Netflix', color: 'bg-red-900', icon: 'fa-n', url: 'https://www.netflix.com' },
+            { id: 'disney', name: 'Disney+', color: 'bg-blue-800', icon: 'fa-d', url: 'https://www.disneyplus.com' },
+            { id: 'web', name: 'Navegador', color: 'bg-slate-700', icon: 'fa-globe', url: 'https://www.google.com' }
         ];
 
-        // --- UTILIDADES ---
         const generateId = () => Math.random().toString(36).substring(2, 6).toUpperCase();
         const getYouTubeId = (url) => {
             if (!url) return null;
@@ -81,114 +111,87 @@
             return (match && match[2].length === 11) ? match[2] : null;
         };
 
-        // --- HOOK DE AUDIO (CHAT DE VOZ P2P) ---
-        const useVoice = (user, partyId, users) => {
+        // --- COMPONENTE: AUDIO (INVISIBLE) ---
+        const VoiceHandler = ({ user, partyId, users }) => {
             const [muted, setMuted] = useState(false);
-            const [stream, setStream] = useState(null);
             const peerRef = useRef(null);
+            const streamRef = useRef(null);
             const containerRef = useRef(null);
 
             useEffect(() => {
-                if(!user || !partyId) return;
+                if (!user || !partyId) return;
                 const peer = new window.Peer(user.uid.substring(0,8) + partyId);
-                
                 peer.on('open', () => {
-                    navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
-                        setStream(s);
+                    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                        streamRef.current = stream;
                         peerRef.current = peer;
-                        peer.on('call', call => {
-                            call.answer(s);
-                            call.on('stream', rem => addAudio(rem));
-                        });
-                    }).catch(e => console.log("Mic off"));
+                        peer.on('call', call => { call.answer(stream); call.on('stream', addAudio); });
+                    }).catch(e => console.log("Sin micro"));
                 });
-
-                return () => { peer.destroy(); if(stream) stream.getTracks().forEach(t=>t.stop()); };
+                return () => { peer.destroy(); streamRef.current?.getTracks().forEach(t=>t.stop()); };
             }, [user, partyId]);
 
             useEffect(() => {
-                if(!peerRef.current || !stream || !users) return;
+                if(!peerRef.current || !streamRef.current || !users) return;
                 users.forEach(u => {
                     if(u.uid !== user.uid) {
-                        const call = peerRef.current.call(u.uid.substring(0,8) + partyId, stream);
-                        if(call) call.on('stream', rem => addAudio(rem));
+                        const call = peerRef.current.call(u.uid.substring(0,8)+partyId, streamRef.current);
+                        if(call) call.on('stream', addAudio);
                     }
                 });
             }, [users]);
 
             const addAudio = (st) => {
-                const aud = document.createElement('audio');
-                aud.srcObject = st; aud.autoplay = true;
-                if(containerRef.current) containerRef.current.appendChild(aud);
+                const a = document.createElement('audio'); a.srcObject = st; a.autoplay = true;
+                containerRef.current?.appendChild(a);
             };
 
             const toggle = () => {
-                if(stream) {
-                    stream.getAudioTracks()[0].enabled = !stream.getAudioTracks()[0].enabled;
-                    setMuted(!stream.getAudioTracks()[0].enabled);
+                if(streamRef.current) {
+                    const track = streamRef.current.getAudioTracks()[0];
+                    track.enabled = !track.enabled;
+                    setMuted(!track.enabled);
                 }
             };
 
-            return { muted, toggle, containerRef };
-        };
-
-        // --- COMPONENTE: WEB NAVIGATOR (IFRAME CONTROLADO) ---
-        const WebNavigator = ({ url, isHost, onNavigate }) => {
-            const [currentUrl, setCurrentUrl] = useState(url);
-            const [inputUrl, setInputUrl] = useState(url);
-
-            // Sincronizar si cambia desde la DB (Host remoto)
-            useEffect(() => {
-                setCurrentUrl(url);
-                setInputUrl(url);
-            }, [url]);
-
-            const handleGo = (e) => {
-                e.preventDefault();
-                let target = inputUrl;
-                if (!target.startsWith('http')) target = 'https://' + target;
-                onNavigate(target);
-            };
-
             return (
-                <div className="flex flex-col h-full bg-white relative">
-                    {/* Barra de Navegación del Host */}
-                    {isHost && (
-                        <div className="bg-slate-900 p-2 flex gap-2 items-center border-b border-white/10 shadow-xl z-10">
-                            <div className="bg-slate-800 p-1.5 rounded text-slate-400"><Globe size={16}/></div>
-                            <form onSubmit={handleGo} className="flex-1 flex gap-2">
-                                <input 
-                                    className="flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:border-blue-500 outline-none transition"
-                                    value={inputUrl}
-                                    onChange={(e) => setInputUrl(e.target.value)}
-                                    placeholder="Escribe una URL (ej: crunchyroll.com)..."
-                                />
-                                <button type="submit" className="bg-blue-600 text-white font-bold px-4 py-1.5 rounded text-xs hover:bg-blue-500 transition">IR</button>
-                            </form>
-                        </div>
-                    )}
-
-                    {/* El Iframe */}
-                    <div className="flex-1 relative bg-slate-100">
-                        <iframe 
-                            src={currentUrl} 
-                            className="web-frame"
-                            allow="autoplay; encrypted-media; fullscreen; microphone; camera"
-                            sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-presentation"
-                        />
-                        
-                        {/* Aviso flotante discreto */}
-                        <div className="absolute bottom-4 right-4 pointer-events-none">
-                            <a href={currentUrl} target="_blank" className="pointer-events-auto bg-black/80 backdrop-blur text-white/80 text-xs px-3 py-2 rounded-full hover:bg-black hover:text-white transition flex items-center gap-2 border border-white/10">
-                                <ExternalLink size={12}/> Abrir en pestaña nueva
-                            </a>
-                        </div>
-                    </div>
+                <div className="absolute top-4 left-4 z-50 pointer-events-auto">
+                    <div ref={containerRef} className="hidden"></div>
+                    <button onClick={toggle} className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold shadow-lg transition-all ${muted ? 'bg-red-500/90 text-white' : 'bg-green-500/90 text-black mic-pulse'}`}>
+                        {muted ? <MicOff size={16}/> : <Mic size={16}/>}
+                        <span className="text-xs">{muted ? 'SILENCIADO' : 'HABLANDO'}</span>
+                    </button>
                 </div>
             );
         };
 
-        // --- COMPONENTE: YOUTUBE PLAYER ---
+        // --- NAVEGADOR WEB (Estilo Mobile Browser) ---
+        const WebBrowser = ({ url, isHost, onNavigate }) => {
+            const [input, setInput] = useState(url);
+            useEffect(() => setInput(url), [url]);
+
+            return (
+                <div className="flex flex-col h-full bg-white relative group">
+                    {/* Iframe */}
+                    <div className="flex-1 relative bg-slate-200">
+                        <iframe src={url} className="web-frame" allow="autoplay; encrypted-media; fullscreen" sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-presentation"/>
+                    </div>
+
+                    {/* Barra de Direcciones (Solo Host, aparece abajo en móvil o arriba en PC) */}
+                    {isHost && (
+                        <div className="bg-slate-900 p-2 flex gap-2 items-center border-t border-slate-700">
+                            <div className="bg-slate-800 p-2 rounded text-slate-400"><Globe size={16}/></div>
+                            <form onSubmit={(e)=>{e.preventDefault(); onNavigate(input)}} className="flex-1 flex gap-2">
+                                <input className="flex-1 bg-black border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none" value={input} onChange={e=>setInput(e.target.value)} placeholder="URL..."/>
+                                <button type="submit" className="bg-blue-600 text-white font-bold px-4 rounded-lg text-sm">IR</button>
+                            </form>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // --- YOUTUBE PLAYER ---
         const YTPlayer = ({ videoId, state, isHost, onUpdate }) => {
             const ref = useRef(null);
             useEffect(() => {
@@ -214,21 +217,19 @@
             return <div id="yt-player" className="w-full h-full bg-black"></div>;
         };
 
-        // --- SALA DE FIESTA ---
+        // --- SALA DE FIESTA (Layout UX Optimizado) ---
         const PartyRoom = ({ partyId, user, onLeave }) => {
             const [party, setParty] = useState(null);
             const [msgs, setMsgs] = useState([]);
             const [txt, setTxt] = useState('');
-            const [ytSearch, setYtSearch] = useState('');
-            const [showSidebar, setShowSidebar] = useState(true);
+            const [search, setSearch] = useState('');
             const chatRef = useRef(null);
-            const { muted, toggle, containerRef } = useVoice(user, partyId, party?.users);
             const isHost = party?.hostId === user.uid;
 
             useEffect(() => {
                 const unsub = onSnapshot(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), d => {
                     if(d.exists()) { setParty(d.data()); setMsgs(d.data().messages || []); }
-                    else { alert("Sala cerrada"); onLeave(); }
+                    else { alert("Sala terminada"); onLeave(); }
                 });
                 updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), { users: arrayUnion({uid:user.uid, name:user.displayName, photo:user.photoURL}) });
                 return () => unsub();
@@ -236,128 +237,97 @@
 
             useEffect(() => chatRef.current?.scrollIntoView({behavior:'smooth'}), [msgs]);
 
-            // Host Actions
-            const updateState = async (play, time) => {
-                await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), { isPlaying: play, timestamp: time, lastUpdated: Date.now() });
-            };
-
-            // Cambio de contenido universal
-            const updateContent = async (newContent) => {
+            const update = async (play, time) => updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), { isPlaying: play, timestamp: time, lastUpdated: Date.now() });
+            
+            const changeContent = async (val) => {
                 if(!isHost) return;
-                let updates = { currentVideoId: newContent, isPlaying: true, timestamp: 0, lastUpdated: Date.now() };
-                
-                // Lógica específica para YouTube
+                let updates = { currentVideoId: val, isPlaying: true, timestamp: 0, lastUpdated: Date.now() };
                 if (party.service === 'youtube') {
-                    const id = getYouTubeId(newContent);
-                    if(!id) return alert("Link inválido de YouTube");
+                    const id = getYouTubeId(val);
+                    if(!id) return alert("Link Youtube inválido");
                     updates.currentVideoId = id;
                 }
-                
-                await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
-                    ...updates,
-                    messages: arrayUnion({ id: Date.now(), system: true, text: '📺 Contenido actualizado' })
-                });
-                setYtSearch('');
+                updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), { ...updates, messages: arrayUnion({ id: Date.now(), system: true, text: 'Cambió el contenido' }) });
+                setSearch('');
             };
 
             const send = async (e) => {
                 e.preventDefault(); if(!txt.trim()) return;
-                await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
+                updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
                     messages: arrayUnion({ id: Date.now(), text: txt, sender: user.displayName, photo: user.photoURL, timestamp: Date.now() })
                 });
                 setTxt('');
             };
 
-            if(!party) return <div className="h-screen bg-slate-950 flex items-center justify-center text-white gap-3"><Loader2 className="animate-spin text-purple-500"/> <span className="animate-pulse">Conectando a la sala...</span></div>;
+            if(!party) return <div className="h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin mr-2"/> Entrando...</div>;
+
+            const isWebMode = party.service !== 'youtube';
 
             return (
-                <div className="flex h-screen bg-black overflow-hidden relative">
-                    <div ref={containerRef} className="hidden"></div>
+                <div className="app-container bg-black">
+                    <VoiceHandler user={user} partyId={partyId} users={party.users} />
 
-                    {/* ZONA PRINCIPAL (VIDEO/WEB) */}
-                    <div className="flex-1 flex flex-col relative bg-slate-900 z-0">
-                        {/* Header Flotante */}
-                        <div className="absolute top-0 left-0 w-full p-3 z-30 flex justify-between pointer-events-none bg-gradient-to-b from-black/80 to-transparent">
-                            <div className="flex gap-2 pointer-events-auto items-center">
-                                <div onClick={()=>{navigator.clipboard.writeText(window.location.href);alert("Link Copiado")}} className="glass px-3 py-1.5 rounded-full flex items-center gap-2 cursor-pointer hover:bg-white/20 text-xs font-bold text-slate-200 border border-white/10 transition">
-                                    <div className="w-2 h-2 bg-green-500 rounded-full live-dot"></div> {party.service.toUpperCase()}
-                                    <div className="w-px h-3 bg-white/20 mx-1"></div>
-                                    <span className="opacity-70">INVITAR</span> <Link size={12}/>
+                    {/* SECCIÓN 1: VIDEO (Arriba en móvil, Izquierda en PC) */}
+                    <div className={`video-section ${isWebMode ? 'web-mode' : ''} bg-slate-900 relative`}>
+                        {/* Botón Salir Flotante */}
+                        <div className="absolute top-4 right-4 z-50">
+                            <button onClick={onLeave} className="bg-black/50 hover:bg-red-600/80 text-white p-2 rounded-full backdrop-blur-md transition">
+                                <LogOut size={18}/>
+                            </button>
+                        </div>
+
+                        {/* Contenido */}
+                        {party.service === 'youtube' ? (
+                            party.currentVideoId ? <YTPlayer videoId={party.currentVideoId} state={party} isHost={isHost} onUpdate={update}/> : (
+                                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
+                                    <Search size={48} className="mb-4 opacity-50"/>
+                                    <p>Esperando video...</p>
                                 </div>
-                                <button onClick={toggle} className={`glass p-1.5 rounded-full border transition ${!muted?'border-green-500/50 text-green-400 bg-green-500/10':'border-red-500/50 text-red-400'}`}>
-                                    {!muted?<Mic size={14}/>:<MicOff size={14}/>}
-                                </button>
-                            </div>
-                            <div className="flex gap-2 pointer-events-auto">
-                                <button onClick={()=>setShowSidebar(!showSidebar)} className="glass p-2 rounded-full hover:bg-white/10 text-white lg:hidden"><MessageSquare size={16}/></button>
-                                <button onClick={onLeave} className="glass p-2 rounded-full hover:bg-red-500/20 text-red-400"><LogOut size={16}/></button>
-                            </div>
-                        </div>
+                            )
+                        ) : (
+                            <WebBrowser url={party.currentVideoId} isHost={isHost} onNavigate={changeContent} />
+                        )}
 
-                        {/* Player / Web Frame */}
-                        <div className="flex-1 relative flex items-center justify-center overflow-hidden">
-                            {party.service === 'youtube' ? (
-                                party.currentVideoId ? (
-                                    <YTPlayer videoId={party.currentVideoId} state={party} isHost={isHost} onUpdate={updateState}/>
-                                ) : (
-                                    <div className="text-center opacity-30"><MonitorPlay size={64} className="mx-auto mb-4"/><p className="text-lg">El host debe seleccionar un video</p></div>
-                                )
-                            ) : (
-                                <WebNavigator url={party.currentVideoId} isHost={isHost} onNavigate={updateContent} />
-                            )}
-                        </div>
-
-                        {/* Controles YouTube (Solo Host) */}
+                        {/* Barra YouTube (Host) */}
                         {party.service === 'youtube' && isHost && (
-                            <div className="p-3 bg-slate-900 border-t border-white/10 flex gap-2 z-20">
-                                <div className="flex-1 relative">
-                                    <Search size={16} className="absolute left-3 top-2.5 text-slate-500"/>
-                                    <input 
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-full pl-9 pr-4 py-2 text-sm outline-none focus:border-red-600 transition" 
-                                        placeholder="Pegar enlace de YouTube..." 
-                                        value={ytSearch} onChange={e=>setYtSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&updateContent(ytSearch)}
-                                    />
+                            <div className="absolute bottom-0 w-full p-2 bg-gradient-to-t from-black to-transparent">
+                                <div className="flex gap-2 bg-slate-900/90 p-2 rounded-lg backdrop-blur-md">
+                                    <input className="flex-1 bg-transparent text-white text-sm outline-none" placeholder="Link de YouTube..." value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&changeContent(search)}/>
+                                    <button onClick={()=>changeContent(search)} className="text-xs bg-red-600 px-3 py-1 rounded font-bold">VER</button>
                                 </div>
-                                <button onClick={()=>updateContent(ytSearch)} className="bg-red-600 text-white font-bold px-5 rounded-full text-xs hover:bg-red-700 transition">VER</button>
                             </div>
                         )}
                     </div>
 
-                    {/* SIDEBAR DERECHA (CHAT Y USUARIOS) */}
-                    <div className={`${showSidebar ? 'translate-x-0' : 'translate-x-full'} lg:translate-x-0 absolute lg:relative right-0 top-0 bottom-0 w-80 glass-panel flex flex-col z-40 transition-transform duration-300 shadow-2xl`}>
-                        {/* Header Sidebar */}
-                        <div className="h-14 border-b border-white/10 flex items-center justify-between px-4 bg-slate-900/50">
-                            <div className="flex items-center gap-2 text-xs font-bold text-slate-400 tracking-widest">
-                                <Users size={14}/> {party.users?.length || 0} EN SALA
-                            </div>
-                            <button onClick={()=>setShowSidebar(false)} className="lg:hidden text-slate-500"><ChevronRight/></button>
-                        </div>
-
-                        {/* User Avatars */}
-                        <div className="p-3 border-b border-white/5 flex gap-2 overflow-x-auto hide-scroll bg-slate-900/30">
-                            {party.users?.map((u, i) => (
-                                <div key={i} className="relative group">
-                                    <img src={u.photo} className="w-9 h-9 rounded-full border-2 border-slate-800 group-hover:border-purple-500 transition"/>
-                                    <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-900"></div>
+                    {/* SECCIÓN 2: CHAT (Abajo en móvil, Derecha en PC) */}
+                    <div className="chat-section">
+                        {/* Info Sala */}
+                        <div className="h-12 border-b border-slate-800 flex items-center justify-between px-4 bg-card">
+                            <div className="flex items-center gap-2">
+                                <div onClick={()=>{navigator.clipboard.writeText(partyId);alert("Copiado")}} className="bg-slate-800 px-2 py-1 rounded cursor-pointer flex items-center gap-2 text-xs font-mono text-slate-300 hover:bg-slate-700">
+                                    {partyId} <Copy size={10}/>
                                 </div>
-                            ))}
+                                <div className="flex -space-x-2">
+                                    {party.users?.slice(0,4).map((u,i)=>(<img key={i} src={u.photo} className="w-6 h-6 rounded-full border border-slate-800"/>))}
+                                </div>
+                            </div>
+                            <div className="text-xs font-bold text-green-500 flex items-center gap-1">
+                                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div> LIVE
+                            </div>
                         </div>
 
-                        {/* Mensajes */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-900/20">
+                        {/* Lista Mensajes */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-dark">
                             {msgs.map((m, i) => (
-                                <div key={i} className={`flex flex-col ${m.system ? 'items-center opacity-60 text-[10px] uppercase tracking-widest my-2' : ''}`}>
+                                <div key={i} className={`flex flex-col ${m.system ? 'items-center opacity-60 my-2' : ''}`}>
                                     {m.system ? (
-                                        <span className="bg-slate-800/50 px-2 py-1 rounded-full border border-white/5">{m.text}</span>
+                                        <span className="text-[10px] bg-slate-800 px-2 py-1 rounded-full text-slate-400">{m.text}</span>
                                     ) : (
-                                        <div className="flex gap-3 animate-fade-in-up">
-                                            <img src={m.photo} className="w-8 h-8 rounded-full bg-slate-800 flex-shrink-0 mt-1"/>
-                                            <div className="min-w-0">
-                                                <div className="flex items-baseline gap-2">
-                                                    <span className="text-xs font-bold text-slate-300">{m.sender}</span>
-                                                    <span className="text-[9px] text-slate-600">{new Date(m.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
-                                                </div>
-                                                <p className="text-sm text-slate-200 leading-snug">{m.text}</p>
+                                        <div className={`flex gap-2 ${m.sender === user.displayName ? 'flex-row-reverse' : ''}`}>
+                                            <img src={m.photo} className="w-8 h-8 rounded-full bg-slate-800 mt-1"/>
+                                            <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${m.sender === user.displayName ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-card text-slate-200 rounded-tl-none'}`}>
+                                                <div className="text-[10px] opacity-50 mb-0.5 font-bold">{m.sender}</div>
+                                                {m.text}
                                             </div>
                                         </div>
                                     )}
@@ -366,15 +336,55 @@
                             <div ref={chatRef}></div>
                         </div>
 
-                        {/* Input Area */}
-                        <form onSubmit={send} className="p-3 bg-slate-900 border-t border-white/10 flex gap-2">
-                            <input 
-                                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm focus:border-purple-500 outline-none transition" 
-                                placeholder="Escribe algo..." value={txt} onChange={e=>setTxt(e.target.value)}
-                            />
-                            <button type="submit" className="p-2.5 bg-purple-600 rounded-xl text-white hover:bg-purple-500 transition shadow-lg shadow-purple-900/20"><Send size={18}/></button>
+                        {/* Input */}
+                        <form onSubmit={send} className="p-3 bg-card border-t border-slate-800 flex gap-2">
+                            <input className="flex-1 bg-dark border border-slate-700 rounded-full px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none transition" placeholder="Di algo..." value={txt} onChange={e=>setTxt(e.target.value)}/>
+                            <button type="submit" className="p-2.5 bg-blue-600 rounded-full text-white hover:bg-blue-500 shadow-lg"><Send size={18}/></button>
                         </form>
                     </div>
+                </div>
+            );
+        };
+
+        // --- DASHBOARD (HOME) ---
+        const Dashboard = ({ user, create, join }) => {
+            return (
+                <div className="min-h-screen bg-dark p-6 flex flex-col items-center">
+                    <header className="w-full max-w-4xl flex justify-between items-center mb-8">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-purple-600 flex items-center justify-center font-bold text-lg shadow-lg">S</div>
+                            <h1 className="font-bold text-xl tracking-tight">StreamParty</h1>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <img src={user.photoURL} className="w-9 h-9 rounded-full border border-slate-700"/>
+                            <button onClick={()=>signOut(auth)} className="text-xs text-red-400 font-bold hover:text-red-300">SALIR</button>
+                        </div>
+                    </header>
+
+                    <main className="w-full max-w-4xl space-y-8">
+                        <section>
+                            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2"><LayoutGrid size={20} className="text-blue-500"/> Crear Sala</h2>
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                {SERVICES.map(svc => (
+                                    <div key={svc.id} onClick={()=>create(svc.id, svc.url)} className={`cursor-pointer service-card rounded-2xl overflow-hidden relative group h-32 md:h-40 ${svc.color}`}>
+                                        <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition"></div>
+                                        <div className="relative h-full flex flex-col items-center justify-center p-4">
+                                            <i className={`fa-brands ${svc.icon} text-4xl mb-2 drop-shadow-md`}></i>
+                                            <span className="font-bold text-sm text-center drop-shadow">{svc.name}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section className="bg-card p-6 rounded-3xl border border-slate-800">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Users size={20} className="text-green-500"/> Unirse a Sala</h2>
+                            <div className="flex gap-2">
+                                <input id="code" placeholder="CÓDIGO (EJ: A1B2)" className="flex-1 bg-dark border border-slate-700 rounded-xl px-4 py-3 text-center font-mono uppercase tracking-widest outline-none focus:border-blue-500 transition"/>
+                                <button onClick={()=>join(document.getElementById('code').value.toUpperCase())} className="bg-white text-black font-bold px-6 rounded-xl hover:bg-gray-200 transition">ENTRAR</button>
+                            </div>
+                        </section>
+                    </main>
                 </div>
             );
         };
@@ -392,9 +402,7 @@
             const create = async (svc, url) => {
                 const id = generateId();
                 await setDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${id}`), {
-                    hostId: user.uid, service: svc, 
-                    currentVideoId: svc === 'youtube' ? '' : url,
-                    isPlaying: false, timestamp: 0, lastUpdated: Date.now(), users: [], messages: []
+                    hostId: user.uid, service: svc, currentVideoId: url, isPlaying: false, timestamp: 0, lastUpdated: Date.now(), users: [], messages: []
                 });
                 setRoom(id); window.history.pushState({}, '', `?room=${id}`);
             };
@@ -402,59 +410,21 @@
             const join = (id) => { if(id) setRoom(id); };
 
             if(!user) return (
-                <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1616097970275-1e187b4ce59f?q=80&w=2070')] bg-cover opacity-10"></div>
-                    <div className="glass p-10 rounded-3xl max-w-sm w-full border-t border-white/10 relative z-10 text-center shadow-2xl">
-                        <div className="w-20 h-20 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-lg transform rotate-3">
-                            <Zap size={40} className="text-white"/>
-                        </div>
-                        <h1 className="text-4xl font-black mb-2 text-white tracking-tighter">StreamParty</h1>
-                        <p className="text-slate-400 mb-8 text-sm">Tu cine virtual sin límites.</p>
-                        <button onClick={()=>signInWithPopup(auth, new GoogleAuthProvider())} className="w-full bg-white text-slate-900 font-bold py-3.5 rounded-xl hover:scale-[1.02] transition flex items-center justify-center gap-2 shadow-xl">
-                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5"/> Entrar con Google
-                        </button>
+                <div className="h-screen bg-black flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-24 h-24 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl mb-6 shadow-2xl flex items-center justify-center">
+                        <MonitorPlay size={48}/>
                     </div>
+                    <h1 className="text-4xl font-black mb-2">StreamParty</h1>
+                    <p className="text-slate-400 mb-8">Tu cine virtual en cualquier lugar.</p>
+                    <button onClick={()=>signInWithPopup(auth, new GoogleAuthProvider())} className="bg-white text-black font-bold py-3 px-8 rounded-full shadow-lg hover:scale-105 transition flex items-center gap-2">
+                        <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5"/> Entrar con Google
+                    </button>
                 </div>
             );
 
             if(room) return <PartyRoom partyId={room} user={user} onLeave={()=>{setRoom(null); window.history.pushState({}, '', window.location.pathname);}}/>;
 
-            return (
-                <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6">
-                    <div className="w-full max-w-5xl">
-                        <header className="flex justify-between items-center mb-10">
-                            <div className="flex items-center gap-4">
-                                <img src={user.photoURL} className="w-12 h-12 rounded-full border-2 border-slate-700"/>
-                                <div>
-                                    <h1 className="text-2xl font-bold text-white">Hola, {user.displayName.split(' ')[0]}</h1>
-                                    <p className="text-slate-400 text-sm">¿Qué quieres ver hoy?</p>
-                                </div>
-                            </div>
-                            <button onClick={()=>signOut(auth)} className="text-red-400 text-sm font-bold hover:text-red-300">Cerrar Sesión</button>
-                        </header>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-                            {SERVICES.map(svc => (
-                                <div key={svc.id} onClick={()=>create(svc.id, svc.url)} className={`glass p-6 rounded-3xl cursor-pointer service-card group relative overflow-hidden border-t border-white/5`}>
-                                    <div className={`absolute inset-0 opacity-0 group-hover:opacity-10 bg-gradient-to-br ${svc.color} transition duration-500`}></div>
-                                    <div className="relative z-10 flex flex-col items-center text-center">
-                                        <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${svc.color} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition duration-300`}>
-                                            <i className={`fa-brands ${svc.icon} text-3xl text-white`}></i>
-                                        </div>
-                                        <h3 className="text-xl font-bold text-white mb-1">{svc.name}</h3>
-                                        <p className="text-xs text-slate-400">Crear sala de {svc.name}</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="glass p-6 rounded-2xl max-w-md mx-auto flex gap-2 items-center">
-                            <input id="code" placeholder="CÓDIGO DE SALA" className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-center tracking-widest text-white outline-none focus:border-purple-500 uppercase flex-1"/>
-                            <button onClick={()=>join(document.getElementById('code').value.toUpperCase())} className="bg-white text-slate-900 font-bold px-6 py-3 rounded-xl hover:bg-slate-200 transition">ENTRAR</button>
-                        </div>
-                    </div>
-                </div>
-            );
+            return <Dashboard user={user} create={create} join={join} />;
         };
 
         createRoot(document.getElementById('root')).render(<App />);
