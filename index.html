@@ -144,8 +144,8 @@
             return { isMuted, toggleMute, audioGridRef };
         };
 
-        // --- COMPONENTE: YOUTUBE PLAYER INTELIGENTE ---
-        const YouTubePlayer = ({ videoId, partyState, isHost }) => {
+        // --- COMPONENTE: YOUTUBE PLAYER INTELIGENTE (AHORA INTERACTIVO) ---
+        const YouTubePlayer = ({ videoId, partyState, isHost, onPlayerUpdate }) => {
             const playerRef = useRef(null);
             
             useEffect(() => {
@@ -154,13 +154,23 @@
 
                 playerRef.current = new window.YT.Player('yt-player', {
                     height: '100%', width: '100%', videoId: videoId,
-                    playerVars: { 'playsinline': 1, 'controls': 0, 'rel': 0, 'disablekb': 1, 'modestbranding': 1, 'origin': window.location.origin },
+                    // CAMBIO IMPORTANTE: controls: 1 y disablekb: 0 para permitir interacción
+                    playerVars: { 'playsinline': 1, 'controls': 1, 'rel': 0, 'disablekb': 0, 'modestbranding': 1, 'origin': window.location.origin },
                     events: {
                         'onReady': (e) => {
                             if (partyState.isPlaying) e.target.playVideo();
                             // Seek inicial si entras tarde
                             const target = calculateTime(partyState);
                             e.target.seekTo(target, true);
+                        },
+                        'onStateChange': (e) => {
+                            // Si soy HOST y cambio el estado (Play/Pause), aviso a todos
+                            if (isHost) {
+                                const state = e.data;
+                                const time = e.target.getCurrentTime();
+                                if (state === 1) onPlayerUpdate(true, time); // Play
+                                if (state === 2) onPlayerUpdate(false, time); // Pause
+                            }
                         }
                     }
                 });
@@ -176,20 +186,25 @@
 
             const syncLoop = () => {
                 if (!playerRef.current?.getPlayerState) return;
+                
+                // Si soy el Host, NO me sincronizo forzosamente con la DB, 
+                // porque YO soy la fuente de la verdad. Esto permite arrastrar la barra de tiempo suavemente.
+                if (isHost) return;
+
                 const pState = playerRef.current.getPlayerState();
                 const current = playerRef.current.getCurrentTime();
                 const target = calculateTime(partyState);
                 const diff = Math.abs(current - target);
 
-                // Auto-Resync si el desface es > 2s
+                // Auto-Resync si el desface es > 2s (Para Viewers)
                 if (diff > 2) playerRef.current.seekTo(target, true);
                 
-                // Auto-Play/Pause
+                // Auto-Play/Pause (Para Viewers)
                 if (partyState.isPlaying && pState !== 1 && pState !== 3) playerRef.current.playVideo();
                 if (!partyState.isPlaying && pState === 1) playerRef.current.pauseVideo();
             };
 
-            return <div id="yt-player" className="w-full h-full bg-black pointer-events-none"></div>;
+            return <div id="yt-player" className="w-full h-full bg-black"></div>;
         };
 
         // --- SALA PRINCIPAL ---
@@ -209,10 +224,7 @@
             // 1. Suscripción a Firestore
             useEffect(() => {
                 const partyRef = doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`);
-                
-                // Registrar presencia
                 updateDoc(partyRef, { users: arrayUnion({ uid: user.uid, name: user.displayName, photo: user.photoURL, isOnline: true }) });
-
                 const unsub = onSnapshot(partyRef, (doc) => {
                     if (doc.exists()) {
                         setParty(doc.data());
@@ -220,8 +232,6 @@
                         setMessages(doc.data().messages || []);
                     } else { alert("Sala cerrada"); onLeave(); }
                 });
-
-                // Cleanup: Quitar usuario al salir
                 return () => {
                     updateDoc(partyRef, { users: arrayRemove({ uid: user.uid, name: user.displayName, photo: user.photoURL, isOnline: true }) });
                     unsub();
@@ -231,12 +241,20 @@
             useEffect(() => chatRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages]);
 
             // 2. Acciones del Host
-            const updatePlayState = async (playing) => {
+            const updatePlayState = async (playing, time = null) => {
                 if (!isHost) return;
-                const player = window.YT.get('yt-player');
-                const time = player ? player.getCurrentTime() : party.timestamp;
+                // Si no se pasa tiempo específico, usar el actual del player o del estado
+                let timestamp = time;
+                if (timestamp === null) {
+                    const player = window.YT.get('yt-player');
+                    timestamp = player ? player.getCurrentTime() : party.timestamp;
+                }
+                
+                // Evitar actualizaciones redundantes
+                if (playing === party.isPlaying && Math.abs(timestamp - party.timestamp) < 2) return;
+
                 await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
-                    isPlaying: playing, timestamp: time, lastUpdated: Date.now(),
+                    isPlaying: playing, timestamp: timestamp, lastUpdated: Date.now(),
                     messages: arrayUnion({ id: Date.now(), system: true, text: playing ? '▶️ Reanudado' : '⏸️ Pausado' })
                 });
             };
@@ -244,15 +262,12 @@
             const addToQueue = async () => {
                 const vid = getYouTubeId(search);
                 if (!vid) return alert("Link inválido");
-                
-                // Si no hay video actual, ponerlo directo
                 if (!party.currentVideoId) {
                     await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
                         currentVideoId: vid, isPlaying: true, timestamp: 0, lastUpdated: Date.now(),
                         messages: arrayUnion({ id: Date.now(), system: true, text: '🎬 Reproduciendo nuevo video' })
                     });
                 } else {
-                    // Añadir a playlist
                     await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
                         playlist: arrayUnion({ id: vid, title: `Video ${playlist.length + 1}`, addedBy: user.displayName })
                     });
@@ -291,8 +306,8 @@
                     <div className="flex-1 flex flex-col relative group">
                         
                         {/* Header Transparente */}
-                        <div className="absolute top-0 w-full p-4 flex justify-between items-start z-20 bg-gradient-to-b from-black/90 to-transparent transition-opacity opacity-0 group-hover:opacity-100">
-                            <div className="flex gap-2">
+                        <div className="absolute top-0 w-full p-4 flex justify-between items-start z-20 bg-gradient-to-b from-black/90 to-transparent transition-opacity opacity-0 group-hover:opacity-100 pointer-events-none">
+                            <div className="flex gap-2 pointer-events-auto">
                                 <div className="glass px-3 py-1 rounded-full flex items-center gap-2 cursor-pointer hover:bg-white/10" onClick={() => {navigator.clipboard.writeText(window.location.href); alert("Link Copiado!")}}>
                                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                                     <span className="text-xs font-bold tracking-widest">INVITAR</span>
@@ -302,13 +317,18 @@
                                     {isMuted ? <MicOff size={14}/> : <Mic size={14}/>} <span className="text-xs font-bold">{isMuted ? 'MUTED' : 'ON AIR'}</span>
                                 </button>
                             </div>
-                            <button onClick={onLeave} className="glass p-2 rounded-full hover:bg-red-600/50"><LogOut size={18}/></button>
+                            <button onClick={onLeave} className="glass p-2 rounded-full hover:bg-red-600/50 pointer-events-auto"><LogOut size={18}/></button>
                         </div>
 
                         {/* Video Player */}
                         <div className="flex-1 bg-black flex items-center justify-center relative">
                             {party.currentVideoId ? (
-                                <YouTubePlayer videoId={party.currentVideoId} partyState={party} isHost={isHost} />
+                                <YouTubePlayer 
+                                    videoId={party.currentVideoId} 
+                                    partyState={party} 
+                                    isHost={isHost} 
+                                    onPlayerUpdate={updatePlayState} 
+                                />
                             ) : (
                                 <div className="text-center opacity-40">
                                     <div className="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse"><Search size={40}/></div>
@@ -317,13 +337,15 @@
                                 </div>
                             )}
                             
-                            {/* Overlay para No-Hosts */}
-                            {!isHost && <div className="absolute inset-0 z-10"></div>}
+                            {/* Overlay para No-Hosts (Desactivado para permitir interacción local si se desea, 
+                               pero activarlo si quieres forzar que solo vean. 
+                               En este caso lo dejamos desactivado para permitir cambiar volumen localmente) */}
+                            {/* {!isHost && <div className="absolute inset-0 z-10"></div>} */}
                         </div>
 
                         {/* Barra de Controles (Host) */}
-                        <div className="p-4 bg-gradient-to-t from-black via-black/80 to-transparent z-20 transition-opacity opacity-0 group-hover:opacity-100">
-                            <div className="max-w-4xl mx-auto flex items-center gap-4">
+                        <div className="p-4 bg-gradient-to-t from-black via-black/80 to-transparent z-20 transition-opacity opacity-0 group-hover:opacity-100 pointer-events-none">
+                            <div className="max-w-4xl mx-auto flex items-center gap-4 pointer-events-auto">
                                 {isHost ? (
                                     <>
                                         <button onClick={() => updatePlayState(!party.isPlaying)} className="bg-white text-black p-3 rounded-full hover:scale-110 transition shadow-lg">
