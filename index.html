@@ -3,67 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>StreamParty Premium</title>
+    <title>StreamParty v13</title>
     <meta name="theme-color" content="#000000">
-    <meta name="apple-mobile-web-app-capable" content="yes">
     
     <!-- Librerías -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <script>
         tailwind.config = {
             theme: {
                 extend: {
+                    fontFamily: { sans: ['Manrope', 'sans-serif'] },
                     colors: {
-                        dark: '#0a0a0a',
-                        card: '#171717',
-                        primary: '#6366f1', // Indigo
-                        accent: '#ec4899'   // Pink
-                    },
-                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                        dark: '#050505',
+                        panel: '#121212',
+                        brand: '#6366f1'
+                    }
                 }
             }
         }
     </script>
 
     <style>
-        body { background-color: #000; color: #fff; overflow: hidden; height: 100vh; width: 100vw; }
-        
-        /* Scrollbar oculta pero funcional */
+        /* Fix crítico para móviles: usar dvh para altura dinámica */
+        body { background-color: #000; color: #fff; overflow: hidden; height: 100dvh; width: 100vw; margin: 0; padding: 0; }
+        #root { height: 100%; width: 100%; }
+
+        .glass { background: rgba(30, 30, 30, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-        /* Efectos Glass */
-        .glass-panel { background: rgba(23, 23, 23, 0.8); backdrop-filter: blur(12px); border-top: 1px solid rgba(255,255,255,0.1); }
         
-        /* Iframe seguro */
-        .web-frame { width: 100%; height: 100%; border: none; background: #fff; }
-
-        /* Layout Responsivo Preciso */
-        .app-container { display: flex; flex-direction: column; height: 100%; }
+        /* Layouts específicos */
+        .layout-mobile { display: flex; flex-direction: column; height: 100dvh; }
+        .layout-desktop { display: flex; flex-direction: row; height: 100dvh; }
         
-        /* En PC: Fila (Video | Chat) */
-        @media (min-width: 1024px) { 
-            .app-container { flex-direction: row; } 
-            .video-section { flex: 1; height: 100%; }
-            .chat-section { width: 350px; border-left: 1px solid #333; }
-        }
-
-        /* En Móvil: Columna (Video Arriba | Chat Abajo) */
+        .video-container { background: #000; position: relative; }
+        
+        /* En móvil, el video ocupa un área fija arriba */
         @media (max-width: 1023px) {
-            .video-section { flex-shrink: 0; width: 100%; aspect-ratio: 16/9; background: #000; position: relative; z-index: 20; }
-            /* Si es modo Web (no youtube), damos más altura en móvil para navegar */
-            .video-section.web-mode { height: 60vh; aspect-ratio: auto; }
-            .chat-section { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #0a0a0a; }
+            .video-slot { height: 35%; flex-shrink: 0; position: relative; z-index: 10; }
+            .chat-slot { height: 65%; flex-grow: 1; background: #121212; display: flex; flex-direction: column; }
+        }
+        
+        /* En PC, el video ocupa el espacio principal */
+        @media (min-width: 1024px) {
+            .video-slot { flex: 1; height: 100%; position: relative; }
+            .chat-slot { width: 400px; height: 100%; border-left: 1px solid #333; background: #0f0f0f; display: flex; flex-direction: column; }
         }
 
-        .mic-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        iframe { border: none; width: 100%; height: 100%; }
+        
+        /* Animaciones */
+        .animate-enter { animation: enter 0.3s ease-out; }
+        @keyframes enter { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
     </style>
 </head>
 <body>
@@ -77,10 +73,10 @@
         import { getFirestore, doc, onSnapshot, updateDoc, arrayUnion, setDoc, arrayRemove, collection } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
         import { 
             Play, Pause, Users, LogOut, Send, Mic, MicOff, Search, Loader2, 
-            Crown, Zap, Link, Globe, ExternalLink, Copy, ChevronLeft, LayoutGrid, Monitor
+            Crown, Zap, Link, Globe, ExternalLink, Copy, ChevronLeft, LayoutGrid, MonitorPlay, Tv
         } from 'https://esm.sh/lucide-react@0.344.0';
 
-        // --- CONFIGURACIÓN FIREBASE ---
+        // --- CONFIG ---
         const firebaseConfig = {
             apiKey: "AIzaSyAJNTDKf8RrUQ_bvt9z1FD3hBQ9TtgFcuE",
             authDomain: "streaming-72bc2.firebaseapp.com",
@@ -93,15 +89,14 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const APP_ID = 'sp-v12-ux-fix'; 
+        const APP_ID = 'sp-v13-stable'; 
 
-        // --- DATA DE SERVICIOS ---
+        // --- SERVICIOS ---
         const SERVICES = [
             { id: 'youtube', name: 'YouTube', color: 'bg-red-600', icon: 'fa-youtube', url: '' },
             { id: 'crunchyroll', name: 'Crunchyroll', color: 'bg-orange-500', icon: 'fa-bolt', url: 'https://www.crunchyroll.com' },
-            { id: 'netflix', name: 'Netflix', color: 'bg-red-900', icon: 'fa-n', url: 'https://www.netflix.com' },
-            { id: 'disney', name: 'Disney+', color: 'bg-blue-800', icon: 'fa-d', url: 'https://www.disneyplus.com' },
-            { id: 'web', name: 'Navegador', color: 'bg-slate-700', icon: 'fa-globe', url: 'https://www.google.com' }
+            { id: 'netflix', name: 'Netflix', color: 'bg-red-800', icon: 'fa-n', url: 'https://www.netflix.com' },
+            { id: 'web', name: 'Navegador', color: 'bg-blue-600', icon: 'fa-globe', url: 'https://www.google.com' }
         ];
 
         const generateId = () => Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -111,7 +106,7 @@
             return (match && match[2].length === 11) ? match[2] : null;
         };
 
-        // --- COMPONENTE: AUDIO (INVISIBLE) ---
+        // --- COMPONENTE: AUDIO ---
         const VoiceHandler = ({ user, partyId, users }) => {
             const [muted, setMuted] = useState(false);
             const peerRef = useRef(null);
@@ -122,11 +117,11 @@
                 if (!user || !partyId) return;
                 const peer = new window.Peer(user.uid.substring(0,8) + partyId);
                 peer.on('open', () => {
-                    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-                        streamRef.current = stream;
+                    navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
+                        streamRef.current = s;
                         peerRef.current = peer;
-                        peer.on('call', call => { call.answer(stream); call.on('stream', addAudio); });
-                    }).catch(e => console.log("Sin micro"));
+                        peer.on('call', c => { c.answer(s); c.on('stream', addAudio); });
+                    }).catch(e => console.warn("Micrófono no disponible"));
                 });
                 return () => { peer.destroy(); streamRef.current?.getTracks().forEach(t=>t.stop()); };
             }, [user, partyId]);
@@ -155,35 +150,30 @@
             };
 
             return (
-                <div className="absolute top-4 left-4 z-50 pointer-events-auto">
+                <div className="fixed bottom-24 right-4 z-50 lg:bottom-8 lg:left-8 lg:right-auto">
                     <div ref={containerRef} className="hidden"></div>
-                    <button onClick={toggle} className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold shadow-lg transition-all ${muted ? 'bg-red-500/90 text-white' : 'bg-green-500/90 text-black mic-pulse'}`}>
-                        {muted ? <MicOff size={16}/> : <Mic size={16}/>}
-                        <span className="text-xs">{muted ? 'SILENCIADO' : 'HABLANDO'}</span>
+                    <button onClick={toggle} className={`h-12 w-12 rounded-full shadow-xl flex items-center justify-center transition-all ${muted ? 'bg-red-500 text-white' : 'bg-green-500 text-black animate-pulse'}`}>
+                        {muted ? <MicOff size={20}/> : <Mic size={20}/>}
                     </button>
                 </div>
             );
         };
 
-        // --- NAVEGADOR WEB (Estilo Mobile Browser) ---
+        // --- WEB BROWSER ---
         const WebBrowser = ({ url, isHost, onNavigate }) => {
             const [input, setInput] = useState(url);
             useEffect(() => setInput(url), [url]);
 
             return (
-                <div className="flex flex-col h-full bg-white relative group">
-                    {/* Iframe */}
-                    <div className="flex-1 relative bg-slate-200">
-                        <iframe src={url} className="web-frame" allow="autoplay; encrypted-media; fullscreen" sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-presentation"/>
+                <div className="flex flex-col h-full bg-white">
+                    <div className="flex-1 relative bg-slate-100">
+                        <iframe src={url} allow="autoplay; encrypted-media; fullscreen" sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-presentation"/>
                     </div>
-
-                    {/* Barra de Direcciones (Solo Host, aparece abajo en móvil o arriba en PC) */}
                     {isHost && (
                         <div className="bg-slate-900 p-2 flex gap-2 items-center border-t border-slate-700">
-                            <div className="bg-slate-800 p-2 rounded text-slate-400"><Globe size={16}/></div>
                             <form onSubmit={(e)=>{e.preventDefault(); onNavigate(input)}} className="flex-1 flex gap-2">
-                                <input className="flex-1 bg-black border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none" value={input} onChange={e=>setInput(e.target.value)} placeholder="URL..."/>
-                                <button type="submit" className="bg-blue-600 text-white font-bold px-4 rounded-lg text-sm">IR</button>
+                                <input className="flex-1 bg-black border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand outline-none" value={input} onChange={e=>setInput(e.target.value)} placeholder="URL https://..."/>
+                                <button type="submit" className="bg-brand text-white font-bold px-4 rounded-lg text-sm">IR</button>
                             </form>
                         </div>
                     )}
@@ -217,7 +207,7 @@
             return <div id="yt-player" className="w-full h-full bg-black"></div>;
         };
 
-        // --- SALA DE FIESTA (Layout UX Optimizado) ---
+        // --- PARTY ROOM ---
         const PartyRoom = ({ partyId, user, onLeave }) => {
             const [party, setParty] = useState(null);
             const [msgs, setMsgs] = useState([]);
@@ -259,28 +249,29 @@
                 setTxt('');
             };
 
-            if(!party) return <div className="h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin mr-2"/> Entrando...</div>;
-
-            const isWebMode = party.service !== 'youtube';
+            if(!party) return <div className="h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin mr-2"/> Cargando...</div>;
 
             return (
-                <div className="app-container bg-black">
+                <div className="layout-mobile lg:layout-desktop bg-black overflow-hidden">
                     <VoiceHandler user={user} partyId={partyId} users={party.users} />
 
-                    {/* SECCIÓN 1: VIDEO (Arriba en móvil, Izquierda en PC) */}
-                    <div className={`video-section ${isWebMode ? 'web-mode' : ''} bg-slate-900 relative`}>
-                        {/* Botón Salir Flotante */}
-                        <div className="absolute top-4 right-4 z-50">
-                            <button onClick={onLeave} className="bg-black/50 hover:bg-red-600/80 text-white p-2 rounded-full backdrop-blur-md transition">
-                                <LogOut size={18}/>
-                            </button>
+                    {/* AREA 1: VIDEO (Top en movil, Left en PC) */}
+                    <div className="video-slot bg-black border-b lg:border-b-0 lg:border-r border-white/10">
+                        {/* Header Overlay */}
+                        <div className="absolute top-0 left-0 w-full p-2 z-20 flex justify-between pointer-events-none bg-gradient-to-b from-black/80 to-transparent">
+                            <div className="pointer-events-auto bg-black/50 backdrop-blur px-3 py-1 rounded-full flex items-center gap-2 border border-white/10" onClick={() => {navigator.clipboard.writeText(partyId); alert("Copiado")}}>
+                                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                <span className="text-xs font-bold text-white tracking-widest">{partyId}</span>
+                                <Copy size={12} className="text-white/70"/>
+                            </div>
+                            <button onClick={onLeave} className="pointer-events-auto bg-red-600/20 p-2 rounded-full text-red-500 hover:bg-red-600/40 backdrop-blur"><LogOut size={16}/></button>
                         </div>
 
                         {/* Contenido */}
                         {party.service === 'youtube' ? (
                             party.currentVideoId ? <YTPlayer videoId={party.currentVideoId} state={party} isHost={isHost} onUpdate={update}/> : (
                                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
-                                    <Search size={48} className="mb-4 opacity-50"/>
+                                    <MonitorPlay size={48} className="mb-4 opacity-50"/>
                                     <p>Esperando video...</p>
                                 </div>
                             )
@@ -288,45 +279,40 @@
                             <WebBrowser url={party.currentVideoId} isHost={isHost} onNavigate={changeContent} />
                         )}
 
-                        {/* Barra YouTube (Host) */}
+                        {/* Barra YouTube Host */}
                         {party.service === 'youtube' && isHost && (
-                            <div className="absolute bottom-0 w-full p-2 bg-gradient-to-t from-black to-transparent">
-                                <div className="flex gap-2 bg-slate-900/90 p-2 rounded-lg backdrop-blur-md">
-                                    <input className="flex-1 bg-transparent text-white text-sm outline-none" placeholder="Link de YouTube..." value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&changeContent(search)}/>
-                                    <button onClick={()=>changeContent(search)} className="text-xs bg-red-600 px-3 py-1 rounded font-bold">VER</button>
+                            <div className="absolute bottom-0 w-full p-2 bg-black/80 backdrop-blur">
+                                <div className="flex gap-2">
+                                    <input className="flex-1 bg-gray-900 text-white text-sm rounded px-3 outline-none border border-gray-700" placeholder="Link de YouTube..." value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&changeContent(search)}/>
+                                    <button onClick={()=>changeContent(search)} className="bg-red-600 text-white font-bold px-3 py-1.5 rounded text-xs">VER</button>
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* SECCIÓN 2: CHAT (Abajo en móvil, Derecha en PC) */}
-                    <div className="chat-section">
-                        {/* Info Sala */}
-                        <div className="h-12 border-b border-slate-800 flex items-center justify-between px-4 bg-card">
-                            <div className="flex items-center gap-2">
-                                <div onClick={()=>{navigator.clipboard.writeText(partyId);alert("Copiado")}} className="bg-slate-800 px-2 py-1 rounded cursor-pointer flex items-center gap-2 text-xs font-mono text-slate-300 hover:bg-slate-700">
-                                    {partyId} <Copy size={10}/>
-                                </div>
-                                <div className="flex -space-x-2">
-                                    {party.users?.slice(0,4).map((u,i)=>(<img key={i} src={u.photo} className="w-6 h-6 rounded-full border border-slate-800"/>))}
-                                </div>
-                            </div>
-                            <div className="text-xs font-bold text-green-500 flex items-center gap-1">
-                                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div> LIVE
+                    {/* AREA 2: CHAT (Bottom en movil, Right en PC) */}
+                    <div className="chat-slot">
+                        {/* Lista Usuarios Horizontal */}
+                        <div className="h-14 border-b border-white/5 flex items-center px-4 gap-3 bg-panel overflow-x-auto no-scrollbar flex-shrink-0">
+                            {party.users?.map((u, i) => (
+                                <img key={i} src={u.photo} className="w-8 h-8 rounded-full border border-white/10 flex-shrink-0" title={u.name}/>
+                            ))}
+                            <div className="ml-auto text-xs text-green-500 font-bold flex items-center gap-1">
+                                <Users size={12}/> {party.users?.length}
                             </div>
                         </div>
 
-                        {/* Lista Mensajes */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-dark">
+                        {/* Mensajes */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
                             {msgs.map((m, i) => (
                                 <div key={i} className={`flex flex-col ${m.system ? 'items-center opacity-60 my-2' : ''}`}>
                                     {m.system ? (
-                                        <span className="text-[10px] bg-slate-800 px-2 py-1 rounded-full text-slate-400">{m.text}</span>
+                                        <span className="text-[10px] bg-white/5 px-2 py-1 rounded-full text-slate-400 border border-white/5">{m.text}</span>
                                     ) : (
                                         <div className={`flex gap-2 ${m.sender === user.displayName ? 'flex-row-reverse' : ''}`}>
-                                            <img src={m.photo} className="w-8 h-8 rounded-full bg-slate-800 mt-1"/>
-                                            <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${m.sender === user.displayName ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-card text-slate-200 rounded-tl-none'}`}>
-                                                <div className="text-[10px] opacity-50 mb-0.5 font-bold">{m.sender}</div>
+                                            <img src={m.photo} className="w-8 h-8 rounded-full bg-slate-800 flex-shrink-0"/>
+                                            <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm break-words ${m.sender === user.displayName ? 'bg-brand text-white rounded-tr-none' : 'bg-slate-800 text-slate-200 rounded-tl-none'}`}>
+                                                <div className="text-[10px] opacity-50 font-bold mb-0.5">{m.sender}</div>
                                                 {m.text}
                                             </div>
                                         </div>
@@ -337,58 +323,16 @@
                         </div>
 
                         {/* Input */}
-                        <form onSubmit={send} className="p-3 bg-card border-t border-slate-800 flex gap-2">
-                            <input className="flex-1 bg-dark border border-slate-700 rounded-full px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none transition" placeholder="Di algo..." value={txt} onChange={e=>setTxt(e.target.value)}/>
-                            <button type="submit" className="p-2.5 bg-blue-600 rounded-full text-white hover:bg-blue-500 shadow-lg"><Send size={18}/></button>
+                        <form onSubmit={send} className="p-3 bg-panel border-t border-white/5 flex gap-2 flex-shrink-0 safe-area-pb">
+                            <input className="flex-1 bg-black border border-slate-800 rounded-full px-4 py-2.5 text-sm text-white focus:border-brand outline-none transition" placeholder="Escribe..." value={txt} onChange={e=>setTxt(e.target.value)}/>
+                            <button type="submit" className="p-2.5 bg-brand rounded-full text-white shadow-lg active:scale-95"><Send size={18}/></button>
                         </form>
                     </div>
                 </div>
             );
         };
 
-        // --- DASHBOARD (HOME) ---
-        const Dashboard = ({ user, create, join }) => {
-            return (
-                <div className="min-h-screen bg-dark p-6 flex flex-col items-center">
-                    <header className="w-full max-w-4xl flex justify-between items-center mb-8">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-purple-600 flex items-center justify-center font-bold text-lg shadow-lg">S</div>
-                            <h1 className="font-bold text-xl tracking-tight">StreamParty</h1>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <img src={user.photoURL} className="w-9 h-9 rounded-full border border-slate-700"/>
-                            <button onClick={()=>signOut(auth)} className="text-xs text-red-400 font-bold hover:text-red-300">SALIR</button>
-                        </div>
-                    </header>
-
-                    <main className="w-full max-w-4xl space-y-8">
-                        <section>
-                            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2"><LayoutGrid size={20} className="text-blue-500"/> Crear Sala</h2>
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                                {SERVICES.map(svc => (
-                                    <div key={svc.id} onClick={()=>create(svc.id, svc.url)} className={`cursor-pointer service-card rounded-2xl overflow-hidden relative group h-32 md:h-40 ${svc.color}`}>
-                                        <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition"></div>
-                                        <div className="relative h-full flex flex-col items-center justify-center p-4">
-                                            <i className={`fa-brands ${svc.icon} text-4xl mb-2 drop-shadow-md`}></i>
-                                            <span className="font-bold text-sm text-center drop-shadow">{svc.name}</span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-
-                        <section className="bg-card p-6 rounded-3xl border border-slate-800">
-                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Users size={20} className="text-green-500"/> Unirse a Sala</h2>
-                            <div className="flex gap-2">
-                                <input id="code" placeholder="CÓDIGO (EJ: A1B2)" className="flex-1 bg-dark border border-slate-700 rounded-xl px-4 py-3 text-center font-mono uppercase tracking-widest outline-none focus:border-blue-500 transition"/>
-                                <button onClick={()=>join(document.getElementById('code').value.toUpperCase())} className="bg-white text-black font-bold px-6 rounded-xl hover:bg-gray-200 transition">ENTRAR</button>
-                            </div>
-                        </section>
-                    </main>
-                </div>
-            );
-        };
-
+        // --- APP ENTRY ---
         const App = () => {
             const [user, setUser] = useState(null);
             const [room, setRoom] = useState(null);
@@ -410,21 +354,56 @@
             const join = (id) => { if(id) setRoom(id); };
 
             if(!user) return (
-                <div className="h-screen bg-black flex flex-col items-center justify-center p-6 text-center">
-                    <div className="w-24 h-24 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl mb-6 shadow-2xl flex items-center justify-center">
-                        <MonitorPlay size={48}/>
+                <div className="h-screen bg-dark flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-24 h-24 bg-gradient-to-tr from-brand to-purple-600 rounded-3xl mb-6 shadow-2xl flex items-center justify-center animate-enter">
+                        <Tv size={48} className="text-white"/>
                     </div>
-                    <h1 className="text-4xl font-black mb-2">StreamParty</h1>
-                    <p className="text-slate-400 mb-8">Tu cine virtual en cualquier lugar.</p>
-                    <button onClick={()=>signInWithPopup(auth, new GoogleAuthProvider())} className="bg-white text-black font-bold py-3 px-8 rounded-full shadow-lg hover:scale-105 transition flex items-center gap-2">
-                        <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5"/> Entrar con Google
+                    <h1 className="text-4xl font-extrabold mb-2 text-white tracking-tighter">StreamParty</h1>
+                    <p className="text-slate-400 mb-8 font-medium">Cine sincronizado en tu bolsillo</p>
+                    <button onClick={()=>signInWithPopup(auth, new GoogleAuthProvider())} className="w-full max-w-xs bg-white text-black font-bold py-3.5 rounded-xl hover:scale-105 transition flex items-center justify-center gap-3 shadow-lg">
+                        <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5"/> Iniciar Sesión
                     </button>
                 </div>
             );
 
             if(room) return <PartyRoom partyId={room} user={user} onLeave={()=>{setRoom(null); window.history.pushState({}, '', window.location.pathname);}}/>;
 
-            return <Dashboard user={user} create={create} join={join} />;
+            return (
+                <div className="min-h-screen bg-dark p-6 flex flex-col items-center animate-enter overflow-y-auto">
+                    <div className="w-full max-w-md space-y-8 pb-10">
+                        <header className="flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <img src={user.photoURL} className="w-10 h-10 rounded-full border border-slate-800"/>
+                                <div>
+                                    <h1 className="font-bold text-lg leading-none">Hola, {user.displayName.split(' ')[0]}</h1>
+                                    <p className="text-xs text-slate-500">¿Qué vemos hoy?</p>
+                                </div>
+                            </div>
+                            <button onClick={()=>signOut(auth)} className="text-xs text-red-400 font-bold bg-red-900/10 px-3 py-1 rounded-full">SALIR</button>
+                        </header>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            {SERVICES.map(svc => (
+                                <button key={svc.id} onClick={()=>create(svc.id, svc.url)} className={`h-32 rounded-2xl relative overflow-hidden group transition active:scale-95 ${svc.color}`}>
+                                    <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition"></div>
+                                    <div className="relative z-10 flex flex-col items-center justify-center h-full text-white">
+                                        <i className={`fa-brands ${svc.icon} text-3xl mb-2 drop-shadow-md`}></i>
+                                        <span className="font-bold text-sm drop-shadow">{svc.name}</span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="bg-panel p-6 rounded-3xl border border-white/5">
+                            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Unirse a Sala</h2>
+                            <div className="flex gap-2">
+                                <input id="code" placeholder="CÓDIGO" className="flex-1 bg-black border border-slate-800 rounded-xl px-4 py-3 text-center font-mono uppercase tracking-widest outline-none focus:border-brand transition text-white"/>
+                                <button onClick={()=>join(document.getElementById('code').value.toUpperCase())} className="bg-white text-black font-bold px-6 rounded-xl hover:bg-gray-200 transition">IR</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
         };
 
         createRoot(document.getElementById('root')).render(<App />);
