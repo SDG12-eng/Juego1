@@ -3,24 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>StreamParty Unlocked</title>
-    <meta name="theme-color" content="#000000">
+    <title>StreamParty Pro</title>
+    <meta name="theme-color" content="#0f172a">
     
+    <!-- Librerías -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #000; color: #fff; height: 100vh; overflow: hidden; }
-        .glass { background: rgba(20, 20, 20, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
-        .no-scroll::-webkit-scrollbar { display: none; }
-        /* Layout */
-        .layout { display: flex; flex-direction: column; height: 100%; }
-        @media (min-width: 1024px) { .layout { flex-direction: row; } }
-        /* Iframe full */
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #020617; color: #fff; overflow: hidden; height: 100vh; }
+        .glass { background: rgba(30, 41, 59, 0.75); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); }
+        .glass-panel { background: #0f172a; border-left: 1px solid rgba(255,255,255,0.05); }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        
+        /* Efectos */
+        .glow-hover:hover { box-shadow: 0 0 20px rgba(124, 58, 237, 0.4); }
+        .service-card { transition: all 0.3s ease; }
+        .service-card:hover { transform: translateY(-4px); }
+        
+        /* Iframe seguro */
         .web-frame { width: 100%; height: 100%; border: none; background: #fff; }
+        
+        /* Animaciones */
+        @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
+        .live-dot { animation: pulse-ring 2s infinite; }
     </style>
 </head>
 <body>
@@ -31,13 +41,14 @@
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
         import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
-        import { getFirestore, doc, onSnapshot, updateDoc, arrayUnion, setDoc, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+        import { getFirestore, doc, onSnapshot, updateDoc, arrayUnion, setDoc, arrayRemove, collection } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
         import { 
             Play, Pause, Users, LogOut, Send, Mic, MicOff, Search, Loader2, 
-            Crown, Zap, Link, Volume2, Globe, ExternalLink, Copy, AlertTriangle
+            Crown, Zap, Link, Volume2, MonitorPlay, ExternalLink, Copy, 
+            LayoutTemplate, MessageSquare, ChevronRight, Globe
         } from 'https://esm.sh/lucide-react@0.344.0';
 
-        // --- CONFIG FIREBASE ---
+        // --- CONFIGURACIÓN FIREBASE ---
         const firebaseConfig = {
             apiKey: "AIzaSyAJNTDKf8RrUQ_bvt9z1FD3hBQ9TtgFcuE",
             authDomain: "streaming-72bc2.firebaseapp.com",
@@ -50,8 +61,19 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const APP_ID = 'sp-v10-unlocked'; 
+        const APP_ID = 'sp-v11-final-unified'; 
 
+        // --- SERVICIOS DISPONIBLES ---
+        const SERVICES = [
+            { id: 'youtube', name: 'YouTube', color: 'from-red-600 to-red-800', icon: 'fa-youtube', url: '' },
+            { id: 'crunchyroll', name: 'Crunchyroll', color: 'from-orange-500 to-orange-700', icon: 'fa-bolt', url: 'https://www.crunchyroll.com' },
+            { id: 'netflix', name: 'Netflix', color: 'from-red-800 to-black', icon: 'fa-n', url: 'https://www.netflix.com' },
+            { id: 'twitch', name: 'Twitch', color: 'from-purple-600 to-purple-900', icon: 'fa-twitch', url: 'https://www.twitch.tv' },
+            { id: 'disney', name: 'Disney+', color: 'from-blue-600 to-blue-900', icon: 'fa-d', url: 'https://www.disneyplus.com' },
+            { id: 'web', name: 'Navegador', color: 'from-slate-600 to-slate-800', icon: 'fa-globe', url: 'https://www.google.com' }
+        ];
+
+        // --- UTILIDADES ---
         const generateId = () => Math.random().toString(36).substring(2, 6).toUpperCase();
         const getYouTubeId = (url) => {
             if (!url) return null;
@@ -59,22 +81,28 @@
             return (match && match[2].length === 11) ? match[2] : null;
         };
 
-        // --- CHAT DE VOZ ---
+        // --- HOOK DE AUDIO (CHAT DE VOZ P2P) ---
         const useVoice = (user, partyId, users) => {
             const [muted, setMuted] = useState(false);
             const [stream, setStream] = useState(null);
             const peerRef = useRef(null);
-            const ref = useRef(null);
+            const containerRef = useRef(null);
 
             useEffect(() => {
                 if(!user || !partyId) return;
-                const peer = new window.Peer(user.uid.substring(0,8)+partyId);
+                const peer = new window.Peer(user.uid.substring(0,8) + partyId);
+                
                 peer.on('open', () => {
                     navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
-                        setStream(s); peerRef.current = peer;
-                        peer.on('call', c => { c.answer(s); c.on('stream', r => add(r)); });
-                    }).catch(e => console.log("Mic error"));
+                        setStream(s);
+                        peerRef.current = peer;
+                        peer.on('call', call => {
+                            call.answer(s);
+                            call.on('stream', rem => addAudio(rem));
+                        });
+                    }).catch(e => console.log("Mic off"));
                 });
+
                 return () => { peer.destroy(); if(stream) stream.getTracks().forEach(t=>t.stop()); };
             }, [user, partyId]);
 
@@ -82,70 +110,78 @@
                 if(!peerRef.current || !stream || !users) return;
                 users.forEach(u => {
                     if(u.uid !== user.uid) {
-                        const c = peerRef.current.call(u.uid.substring(0,8)+partyId, stream);
-                        if(c) c.on('stream', r => add(r));
+                        const call = peerRef.current.call(u.uid.substring(0,8) + partyId, stream);
+                        if(call) call.on('stream', rem => addAudio(rem));
                     }
                 });
             }, [users]);
 
-            const add = (st) => {
-                const a = document.createElement('audio');
-                a.srcObject = st; a.autoplay = true;
-                if(ref.current) ref.current.appendChild(a);
+            const addAudio = (st) => {
+                const aud = document.createElement('audio');
+                aud.srcObject = st; aud.autoplay = true;
+                if(containerRef.current) containerRef.current.appendChild(aud);
             };
-            const toggle = () => { if(stream) { stream.getAudioTracks()[0].enabled = !muted; setMuted(!muted); } };
-            return { muted, toggle, ref };
+
+            const toggle = () => {
+                if(stream) {
+                    stream.getAudioTracks()[0].enabled = !stream.getAudioTracks()[0].enabled;
+                    setMuted(!stream.getAudioTracks()[0].enabled);
+                }
+            };
+
+            return { muted, toggle, containerRef };
         };
 
-        // --- COMPONENTE: WEB FRAME (CRUNCHYROLL EMBED FORZADO) ---
-        const WebFrame = ({ url, isHost, onUrlChange }) => {
+        // --- COMPONENTE: WEB NAVIGATOR (IFRAME CONTROLADO) ---
+        const WebNavigator = ({ url, isHost, onNavigate }) => {
+            const [currentUrl, setCurrentUrl] = useState(url);
             const [inputUrl, setInputUrl] = useState(url);
 
-            useEffect(() => setInputUrl(url), [url]);
+            // Sincronizar si cambia desde la DB (Host remoto)
+            useEffect(() => {
+                setCurrentUrl(url);
+                setInputUrl(url);
+            }, [url]);
 
             const handleGo = (e) => {
                 e.preventDefault();
-                onUrlChange(inputUrl);
+                let target = inputUrl;
+                if (!target.startsWith('http')) target = 'https://' + target;
+                onNavigate(target);
             };
 
             return (
-                <div className="w-full h-full flex flex-col bg-white relative">
+                <div className="flex flex-col h-full bg-white relative">
                     {/* Barra de Navegación del Host */}
                     {isHost && (
-                        <div className="bg-zinc-900 p-2 flex gap-2 items-center border-b border-white/10">
-                            <Globe size={16} className="text-orange-500"/>
+                        <div className="bg-slate-900 p-2 flex gap-2 items-center border-b border-white/10 shadow-xl z-10">
+                            <div className="bg-slate-800 p-1.5 rounded text-slate-400"><Globe size={16}/></div>
                             <form onSubmit={handleGo} className="flex-1 flex gap-2">
                                 <input 
-                                    className="flex-1 bg-black border border-zinc-700 rounded px-3 py-1 text-sm text-white focus:border-orange-500 outline-none"
+                                    className="flex-1 bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:border-blue-500 outline-none transition"
                                     value={inputUrl}
                                     onChange={(e) => setInputUrl(e.target.value)}
-                                    placeholder="https://www.crunchyroll.com/..."
+                                    placeholder="Escribe una URL (ej: crunchyroll.com)..."
                                 />
-                                <button type="submit" className="bg-orange-500 text-black font-bold px-3 py-1 rounded text-xs hover:bg-orange-400">IR</button>
+                                <button type="submit" className="bg-blue-600 text-white font-bold px-4 py-1.5 rounded text-xs hover:bg-blue-500 transition">IR</button>
                             </form>
                         </div>
                     )}
 
-                    {/* El Iframe Prohibido */}
-                    <div className="flex-1 relative">
+                    {/* El Iframe */}
+                    <div className="flex-1 relative bg-slate-100">
                         <iframe 
-                            src={url} 
+                            src={currentUrl} 
                             className="web-frame"
-                            allow="autoplay; encrypted-media; fullscreen"
+                            allow="autoplay; encrypted-media; fullscreen; microphone; camera"
                             sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-presentation"
                         />
                         
-                        {/* Capa de protección visual si falla */}
-                        <div className="absolute top-0 right-0 p-4 pointer-events-none">
-                            <div className="bg-black/80 backdrop-blur text-white text-xs p-3 rounded-lg border border-red-500/50 pointer-events-auto shadow-xl max-w-xs">
-                                <div className="flex items-center gap-2 mb-2 text-red-400 font-bold">
-                                    <AlertTriangle size={14}/> Posible Bloqueo
-                                </div>
-                                <p className="mb-2 opacity-80">Si ves la pantalla blanca, es por seguridad del navegador.</p>
-                                <a href={url} target="_blank" className="block text-center bg-white text-black font-bold py-2 rounded hover:bg-gray-200 transition">
-                                    Abrir en Pestaña Nueva <ExternalLink size={12} className="inline"/>
-                                </a>
-                            </div>
+                        {/* Aviso flotante discreto */}
+                        <div className="absolute bottom-4 right-4 pointer-events-none">
+                            <a href={currentUrl} target="_blank" className="pointer-events-auto bg-black/80 backdrop-blur text-white/80 text-xs px-3 py-2 rounded-full hover:bg-black hover:text-white transition flex items-center gap-2 border border-white/10">
+                                <ExternalLink size={12}/> Abrir en pestaña nueva
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -184,8 +220,9 @@
             const [msgs, setMsgs] = useState([]);
             const [txt, setTxt] = useState('');
             const [ytSearch, setYtSearch] = useState('');
+            const [showSidebar, setShowSidebar] = useState(true);
             const chatRef = useRef(null);
-            const { muted, toggle, ref } = useVoice(user, partyId, party?.users);
+            const { muted, toggle, containerRef } = useVoice(user, partyId, party?.users);
             const isHost = party?.hostId === user.uid;
 
             useEffect(() => {
@@ -199,16 +236,17 @@
 
             useEffect(() => chatRef.current?.scrollIntoView({behavior:'smooth'}), [msgs]);
 
-            // Sync Logic
+            // Host Actions
             const updateState = async (play, time) => {
                 await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), { isPlaying: play, timestamp: time, lastUpdated: Date.now() });
             };
 
-            const changeContent = async (newContent) => {
+            // Cambio de contenido universal
+            const updateContent = async (newContent) => {
                 if(!isHost) return;
                 let updates = { currentVideoId: newContent, isPlaying: true, timestamp: 0, lastUpdated: Date.now() };
                 
-                // Si es YouTube, verificar ID
+                // Lógica específica para YouTube
                 if (party.service === 'youtube') {
                     const id = getYouTubeId(newContent);
                     if(!id) return alert("Link inválido de YouTube");
@@ -230,68 +268,96 @@
                 setTxt('');
             };
 
-            if(!party) return <div className="h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin"/></div>;
+            if(!party) return <div className="h-screen bg-slate-950 flex items-center justify-center text-white gap-3"><Loader2 className="animate-spin text-purple-500"/> <span className="animate-pulse">Conectando a la sala...</span></div>;
 
             return (
-                <div className="layout bg-black">
-                    <div ref={ref} className="hidden"></div>
+                <div className="flex h-screen bg-black overflow-hidden relative">
+                    <div ref={containerRef} className="hidden"></div>
 
-                    {/* ZONA PRINCIPAL */}
-                    <div className="flex-1 flex flex-col relative bg-zinc-950">
-                        {/* Header */}
-                        <div className="absolute top-0 w-full p-3 z-30 flex justify-between pointer-events-none">
-                            <div className="flex gap-2 pointer-events-auto">
-                                <div onClick={()=>{navigator.clipboard.writeText(partyId);alert("Copiado")}} className="glass px-3 py-1 rounded-full flex items-center gap-2 cursor-pointer hover:bg-white/20 text-xs font-bold">
-                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> ID: {partyId} <Copy size={12}/>
+                    {/* ZONA PRINCIPAL (VIDEO/WEB) */}
+                    <div className="flex-1 flex flex-col relative bg-slate-900 z-0">
+                        {/* Header Flotante */}
+                        <div className="absolute top-0 left-0 w-full p-3 z-30 flex justify-between pointer-events-none bg-gradient-to-b from-black/80 to-transparent">
+                            <div className="flex gap-2 pointer-events-auto items-center">
+                                <div onClick={()=>{navigator.clipboard.writeText(window.location.href);alert("Link Copiado")}} className="glass px-3 py-1.5 rounded-full flex items-center gap-2 cursor-pointer hover:bg-white/20 text-xs font-bold text-slate-200 border border-white/10 transition">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full live-dot"></div> {party.service.toUpperCase()}
+                                    <div className="w-px h-3 bg-white/20 mx-1"></div>
+                                    <span className="opacity-70">INVITAR</span> <Link size={12}/>
                                 </div>
-                                <button onClick={toggle} className={`glass p-1.5 rounded-full ${!muted?'text-green-400 border-green-500/50':'text-red-400'}`}>
+                                <button onClick={toggle} className={`glass p-1.5 rounded-full border transition ${!muted?'border-green-500/50 text-green-400 bg-green-500/10':'border-red-500/50 text-red-400'}`}>
                                     {!muted?<Mic size={14}/>:<MicOff size={14}/>}
                                 </button>
                             </div>
-                            <button onClick={onLeave} className="glass p-2 rounded-full hover:bg-red-600/50 pointer-events-auto"><LogOut size={16}/></button>
+                            <div className="flex gap-2 pointer-events-auto">
+                                <button onClick={()=>setShowSidebar(!showSidebar)} className="glass p-2 rounded-full hover:bg-white/10 text-white lg:hidden"><MessageSquare size={16}/></button>
+                                <button onClick={onLeave} className="glass p-2 rounded-full hover:bg-red-500/20 text-red-400"><LogOut size={16}/></button>
+                            </div>
                         </div>
 
-                        {/* Player Area */}
+                        {/* Player / Web Frame */}
                         <div className="flex-1 relative flex items-center justify-center overflow-hidden">
                             {party.service === 'youtube' ? (
                                 party.currentVideoId ? (
                                     <YTPlayer videoId={party.currentVideoId} state={party} isHost={isHost} onUpdate={updateState}/>
                                 ) : (
-                                    <div className="text-center opacity-30"><Search size={48} className="mx-auto mb-2"/><p>Busca un video de YouTube</p></div>
+                                    <div className="text-center opacity-30"><MonitorPlay size={64} className="mx-auto mb-4"/><p className="text-lg">El host debe seleccionar un video</p></div>
                                 )
                             ) : (
-                                <WebFrame url={party.currentVideoId} isHost={isHost} onUrlChange={changeContent} />
+                                <WebNavigator url={party.currentVideoId} isHost={isHost} onNavigate={updateContent} />
                             )}
                         </div>
 
-                        {/* Controles YouTube (Solo si es YouTube y Host) */}
+                        {/* Controles YouTube (Solo Host) */}
                         {party.service === 'youtube' && isHost && (
-                            <div className="p-3 bg-zinc-900 border-t border-white/10 flex gap-2">
-                                <input className="flex-1 bg-black border border-zinc-700 rounded px-3 py-2 text-sm outline-none focus:border-red-500" placeholder="Link de YouTube..." value={ytSearch} onChange={e=>setYtSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&changeContent(ytSearch)}/>
-                                <button onClick={()=>changeContent(ytSearch)} className="bg-red-600 text-white font-bold px-4 rounded text-xs">VER</button>
+                            <div className="p-3 bg-slate-900 border-t border-white/10 flex gap-2 z-20">
+                                <div className="flex-1 relative">
+                                    <Search size={16} className="absolute left-3 top-2.5 text-slate-500"/>
+                                    <input 
+                                        className="w-full bg-slate-950 border border-slate-800 rounded-full pl-9 pr-4 py-2 text-sm outline-none focus:border-red-600 transition" 
+                                        placeholder="Pegar enlace de YouTube..." 
+                                        value={ytSearch} onChange={e=>setYtSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&updateContent(ytSearch)}
+                                    />
+                                </div>
+                                <button onClick={()=>updateContent(ytSearch)} className="bg-red-600 text-white font-bold px-5 rounded-full text-xs hover:bg-red-700 transition">VER</button>
                             </div>
                         )}
                     </div>
 
-                    {/* CHAT LATERAL */}
-                    <div className="h-[40vh] lg:h-full lg:w-80 bg-slate-950 border-t lg:border-t-0 lg:border-l border-white/10 flex flex-col">
-                        <div className="h-12 border-b border-white/5 flex items-center px-4 gap-2 overflow-x-auto no-scroll bg-slate-900/50">
+                    {/* SIDEBAR DERECHA (CHAT Y USUARIOS) */}
+                    <div className={`${showSidebar ? 'translate-x-0' : 'translate-x-full'} lg:translate-x-0 absolute lg:relative right-0 top-0 bottom-0 w-80 glass-panel flex flex-col z-40 transition-transform duration-300 shadow-2xl`}>
+                        {/* Header Sidebar */}
+                        <div className="h-14 border-b border-white/10 flex items-center justify-between px-4 bg-slate-900/50">
+                            <div className="flex items-center gap-2 text-xs font-bold text-slate-400 tracking-widest">
+                                <Users size={14}/> {party.users?.length || 0} EN SALA
+                            </div>
+                            <button onClick={()=>setShowSidebar(false)} className="lg:hidden text-slate-500"><ChevronRight/></button>
+                        </div>
+
+                        {/* User Avatars */}
+                        <div className="p-3 border-b border-white/5 flex gap-2 overflow-x-auto hide-scroll bg-slate-900/30">
                             {party.users?.map((u, i) => (
-                                <img key={i} src={u.photo} className="w-8 h-8 rounded-full border border-white/10" title={u.name}/>
+                                <div key={i} className="relative group">
+                                    <img src={u.photo} className="w-9 h-9 rounded-full border-2 border-slate-800 group-hover:border-purple-500 transition"/>
+                                    <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-900"></div>
+                                </div>
                             ))}
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
+                        {/* Mensajes */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-900/20">
                             {msgs.map((m, i) => (
-                                <div key={i} className={`flex flex-col ${m.system ? 'items-center opacity-50 text-[10px]' : ''}`}>
-                                    {m.system ? m.text : (
-                                        <div className="flex gap-2">
-                                            <img src={m.photo} className="w-6 h-6 rounded-full bg-slate-800"/>
-                                            <div>
+                                <div key={i} className={`flex flex-col ${m.system ? 'items-center opacity-60 text-[10px] uppercase tracking-widest my-2' : ''}`}>
+                                    {m.system ? (
+                                        <span className="bg-slate-800/50 px-2 py-1 rounded-full border border-white/5">{m.text}</span>
+                                    ) : (
+                                        <div className="flex gap-3 animate-fade-in-up">
+                                            <img src={m.photo} className="w-8 h-8 rounded-full bg-slate-800 flex-shrink-0 mt-1"/>
+                                            <div className="min-w-0">
                                                 <div className="flex items-baseline gap-2">
-                                                    <span className="text-xs font-bold text-slate-400">{m.sender}</span>
+                                                    <span className="text-xs font-bold text-slate-300">{m.sender}</span>
                                                     <span className="text-[9px] text-slate-600">{new Date(m.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
                                                 </div>
-                                                <p className="text-sm text-slate-200">{m.text}</p>
+                                                <p className="text-sm text-slate-200 leading-snug">{m.text}</p>
                                             </div>
                                         </div>
                                     )}
@@ -299,9 +365,14 @@
                             ))}
                             <div ref={chatRef}></div>
                         </div>
+
+                        {/* Input Area */}
                         <form onSubmit={send} className="p-3 bg-slate-900 border-t border-white/10 flex gap-2">
-                            <input className="flex-1 bg-black border border-slate-800 rounded px-3 py-2 text-sm focus:border-blue-500 outline-none" placeholder="Chat..." value={txt} onChange={e=>setTxt(e.target.value)}/>
-                            <button type="submit" className="text-blue-500 hover:text-white"><Send size={18}/></button>
+                            <input 
+                                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm focus:border-purple-500 outline-none transition" 
+                                placeholder="Escribe algo..." value={txt} onChange={e=>setTxt(e.target.value)}
+                            />
+                            <button type="submit" className="p-2.5 bg-purple-600 rounded-xl text-white hover:bg-purple-500 transition shadow-lg shadow-purple-900/20"><Send size={18}/></button>
                         </form>
                     </div>
                 </div>
@@ -318,21 +389,30 @@
                 if(u && p) setRoom(p);
             }), []);
 
-            const create = async (svc) => {
+            const create = async (svc, url) => {
                 const id = generateId();
                 await setDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${id}`), {
                     hostId: user.uid, service: svc, 
-                    currentVideoId: svc === 'youtube' ? '' : 'https://www.crunchyroll.com',
+                    currentVideoId: svc === 'youtube' ? '' : url,
                     isPlaying: false, timestamp: 0, lastUpdated: Date.now(), users: [], messages: []
                 });
                 setRoom(id); window.history.pushState({}, '', `?room=${id}`);
             };
 
+            const join = (id) => { if(id) setRoom(id); };
+
             if(!user) return (
-                <div className="h-screen bg-slate-950 flex items-center justify-center p-6">
-                    <div className="glass p-8 rounded-2xl text-center max-w-sm w-full border-t border-white/10">
-                        <h1 className="text-4xl font-black mb-6 text-white tracking-tighter">StreamParty</h1>
-                        <button onClick={()=>signInWithPopup(auth, new GoogleAuthProvider())} className="w-full bg-white text-black font-bold py-3 rounded-lg hover:scale-105 transition">Entrar con Google</button>
+                <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1616097970275-1e187b4ce59f?q=80&w=2070')] bg-cover opacity-10"></div>
+                    <div className="glass p-10 rounded-3xl max-w-sm w-full border-t border-white/10 relative z-10 text-center shadow-2xl">
+                        <div className="w-20 h-20 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-lg transform rotate-3">
+                            <Zap size={40} className="text-white"/>
+                        </div>
+                        <h1 className="text-4xl font-black mb-2 text-white tracking-tighter">StreamParty</h1>
+                        <p className="text-slate-400 mb-8 text-sm">Tu cine virtual sin límites.</p>
+                        <button onClick={()=>signInWithPopup(auth, new GoogleAuthProvider())} className="w-full bg-white text-slate-900 font-bold py-3.5 rounded-xl hover:scale-[1.02] transition flex items-center justify-center gap-2 shadow-xl">
+                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5"/> Entrar con Google
+                        </button>
                     </div>
                 </div>
             );
@@ -340,35 +420,37 @@
             if(room) return <PartyRoom partyId={room} user={user} onLeave={()=>{setRoom(null); window.history.pushState({}, '', window.location.pathname);}}/>;
 
             return (
-                <div className="h-screen bg-slate-950 flex items-center justify-center p-4">
-                    <div className="max-w-4xl w-full">
-                        <div className="flex justify-between items-center mb-8">
-                            <div className="flex items-center gap-3">
-                                <img src={user.photoURL} className="w-10 h-10 rounded-full border border-white/20"/>
-                                <span className="font-bold text-lg hidden md:inline">Hola, {user.displayName.split(' ')[0]}</span>
+                <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6">
+                    <div className="w-full max-w-5xl">
+                        <header className="flex justify-between items-center mb-10">
+                            <div className="flex items-center gap-4">
+                                <img src={user.photoURL} className="w-12 h-12 rounded-full border-2 border-slate-700"/>
+                                <div>
+                                    <h1 className="text-2xl font-bold text-white">Hola, {user.displayName.split(' ')[0]}</h1>
+                                    <p className="text-slate-400 text-sm">¿Qué quieres ver hoy?</p>
+                                </div>
                             </div>
-                            <button onClick={()=>signOut(auth)} className="text-red-400 text-sm font-bold">Salir</button>
-                        </div>
+                            <button onClick={()=>signOut(auth)} className="text-red-400 text-sm font-bold hover:text-red-300">Cerrar Sesión</button>
+                        </header>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Card YouTube */}
-                            <div onClick={()=>create('youtube')} className="glass p-8 rounded-3xl cursor-pointer hover:bg-red-900/20 hover:border-red-500/50 transition group border-t border-white/10">
-                                <MonitorPlay size={48} className="text-red-500 mb-4 group-hover:scale-110 transition"/>
-                                <h3 className="text-2xl font-bold mb-2">Sala YouTube</h3>
-                                <p className="text-slate-400 text-sm">Sincronización perfecta de videos y música.</p>
-                            </div>
-                            
-                            {/* Card Crunchyroll */}
-                            <div onClick={()=>create('crunchyroll')} className="glass p-8 rounded-3xl cursor-pointer hover:bg-orange-900/20 hover:border-orange-500/50 transition group border-t border-white/10">
-                                <Zap size={48} className="text-orange-500 mb-4 group-hover:scale-110 transition"/>
-                                <h3 className="text-2xl font-bold mb-2">Sala Web</h3>
-                                <p className="text-slate-400 text-sm">Navegador integrado para Crunchyroll, AnimeFLV, etc.</p>
-                            </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+                            {SERVICES.map(svc => (
+                                <div key={svc.id} onClick={()=>create(svc.id, svc.url)} className={`glass p-6 rounded-3xl cursor-pointer service-card group relative overflow-hidden border-t border-white/5`}>
+                                    <div className={`absolute inset-0 opacity-0 group-hover:opacity-10 bg-gradient-to-br ${svc.color} transition duration-500`}></div>
+                                    <div className="relative z-10 flex flex-col items-center text-center">
+                                        <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${svc.color} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition duration-300`}>
+                                            <i className={`fa-brands ${svc.icon} text-3xl text-white`}></i>
+                                        </div>
+                                        <h3 className="text-xl font-bold text-white mb-1">{svc.name}</h3>
+                                        <p className="text-xs text-slate-400">Crear sala de {svc.name}</p>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
 
-                        <div className="mt-8 flex gap-2 justify-center">
-                            <input id="code" placeholder="CÓDIGO DE SALA" className="bg-black border border-slate-700 rounded-lg px-4 py-3 text-center tracking-widest outline-none focus:border-blue-500 uppercase"/>
-                            <button onClick={()=>setRoom(document.getElementById('code').value.toUpperCase())} className="bg-white text-black font-bold px-6 rounded-lg hover:bg-gray-200">ENTRAR</button>
+                        <div className="glass p-6 rounded-2xl max-w-md mx-auto flex gap-2 items-center">
+                            <input id="code" placeholder="CÓDIGO DE SALA" className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-center tracking-widest text-white outline-none focus:border-purple-500 uppercase flex-1"/>
+                            <button onClick={()=>join(document.getElementById('code').value.toUpperCase())} className="bg-white text-slate-900 font-bold px-6 py-3 rounded-xl hover:bg-slate-200 transition">ENTRAR</button>
                         </div>
                     </div>
                 </div>
