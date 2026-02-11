@@ -3,30 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>StreamParty Ultimate</title>
+    <title>StreamParty Mobile</title>
     <meta name="theme-color" content="#000000">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     
-    <!-- Estilos y Librerías -->
+    <!-- Librerías -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #000; color: #fff; overflow: hidden; }
-        .glass { background: rgba(20, 20, 20, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); }
-        .glass-panel { background: #0a0a0a; border-left: 1px solid #222; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .animate-pop { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        @keyframes pop { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-        .gradient-text { background: linear-gradient(to right, #f47521, #fab818); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        
-        /* Crunchyroll Theme */
-        .cr-bg { background-color: #000; background-image: radial-gradient(circle at 50% 50%, #2a1a08 0%, #000 70%); }
-        .cr-btn { background-color: #f47521; color: black; font-weight: bold; text-transform: uppercase; }
-        .cr-btn:hover { background-color: #ff9d5c; }
+        body { font-family: 'Inter', sans-serif; background-color: #000; color: #fff; overflow: hidden; height: 100vh; width: 100vw; }
+        .glass { background: rgba(20, 20, 20, 0.85); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.1); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .mic-wave { animation: wave 1s infinite ease-in-out; }
+        @keyframes wave { 0%, 100% { height: 10%; } 50% { height: 100%; } }
+        /* Ajuste para móviles: Chat ocupa el espacio restante */
+        .mobile-layout { display: flex; flex-direction: column; height: 100%; }
+        @media (min-width: 768px) { .mobile-layout { flex-direction: row; } }
+        iframe { border: none; }
     </style>
 </head>
 <body>
@@ -40,9 +38,10 @@
         import { getFirestore, doc, onSnapshot, updateDoc, arrayUnion, setDoc, arrayRemove, collection, query, orderBy, limit, addDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
         import { 
             Play, Pause, Users, LogOut, Send, Mic, MicOff, Search, Loader2, 
-            Crown, Link as LinkIcon, Volume2, ListVideo, ExternalLink, Zap, MonitorPlay
+            Crown, Link as LinkIcon, Volume2, Globe, ExternalLink, Zap, MonitorPlay, AlertTriangle, X
         } from 'https://esm.sh/lucide-react@0.344.0';
 
+        // --- CONFIGURACIÓN FIREBASE ---
         const firebaseConfig = {
             apiKey: "AIzaSyAJNTDKf8RrUQ_bvt9z1FD3hBQ9TtgFcuE",
             authDomain: "streaming-72bc2.firebaseapp.com",
@@ -55,8 +54,9 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const APP_ID = 'stream-party-v8-crunchy'; 
+        const APP_ID = 'stream-party-v8-responsive'; 
 
+        // --- UTILIDADES ---
         const generateId = () => Math.random().toString(36).substring(2, 6).toUpperCase();
         const getYouTubeId = (url) => {
             if (!url) return null;
@@ -64,191 +64,111 @@
             return (match && match[2].length === 11) ? match[2] : null;
         };
 
+        // --- GESTOR DE AUDIO P2P ---
+        const useVoiceChat = (user, partyId, activeUsers) => {
+            const [peer, setPeer] = useState(null);
+            const [myStream, setMyStream] = useState(null);
+            const [isMuted, setIsMuted] = useState(false);
+            const audioGridRef = useRef(null);
+
+            useEffect(() => {
+                if (!user || !partyId) return;
+                const newPeer = new window.Peer(user.uid.substring(0, 10) + partyId);
+                newPeer.on('open', () => {
+                    setPeer(newPeer);
+                    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => setMyStream(stream)).catch(console.error);
+                });
+                newPeer.on('call', call => {
+                    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                        call.answer(stream);
+                        call.on('stream', remote => addAudio(call.peer, remote));
+                    });
+                });
+                return () => { newPeer.destroy(); if(myStream) myStream.getTracks().forEach(t=>t.stop()); };
+            }, [user, partyId]);
+
+            useEffect(() => {
+                if (!peer || !myStream || !activeUsers) return;
+                activeUsers.forEach(u => {
+                    const pid = u.uid.substring(0, 10) + partyId;
+                    if (u.uid !== user.uid) {
+                        const call = peer.call(pid, myStream);
+                        if(call) call.on('stream', remote => addAudio(pid, remote));
+                    }
+                });
+            }, [activeUsers, peer, myStream]);
+
+            const addAudio = (id, stream) => {
+                if (document.getElementById(`audio-${id}`)) return;
+                const a = document.createElement('audio');
+                a.id = `audio-${id}`; a.srcObject = stream; a.autoplay = true;
+                if(audioGridRef.current) audioGridRef.current.appendChild(a);
+            };
+
+            const toggleMute = () => {
+                if (myStream) {
+                    const track = myStream.getAudioTracks()[0];
+                    track.enabled = !track.enabled;
+                    setIsMuted(!track.enabled);
+                }
+            };
+            return { isMuted, toggleMute, audioGridRef };
+        };
+
         // --- COMPONENTE: YOUTUBE PLAYER ---
-        const YouTubePlayer = ({ videoId, partyState, isHost, onPlayerUpdate }) => {
+        const YouTubePlayer = ({ videoId, partyState, isHost, onUpdate }) => {
             const playerRef = useRef(null);
             useEffect(() => {
                 if (!window.YT) return;
-                if (playerRef.current) try { playerRef.current.destroy(); } catch(e){}
                 playerRef.current = new window.YT.Player('yt-player', {
                     height: '100%', width: '100%', videoId: videoId,
-                    playerVars: { 'playsinline': 1, 'controls': 1, 'rel': 0, 'disablekb': 0, 'modestbranding': 1, 'origin': window.location.origin },
+                    playerVars: { 'playsinline': 1, 'controls': 1, 'rel': 0, 'modestbranding': 1, 'origin': window.location.origin },
                     events: {
-                        'onReady': (e) => {
-                            if (partyState.isPlaying) e.target.playVideo();
-                            e.target.seekTo(calculateTime(partyState), true);
-                        },
-                        'onStateChange': (e) => {
-                            if (isHost && (e.data === 1 || e.data === 2)) onPlayerUpdate(e.data === 1, e.target.getCurrentTime());
-                        }
+                        'onReady': e => { if(partyState.isPlaying) e.target.playVideo(); },
+                        'onStateChange': e => { if(isHost && (e.data===1 || e.data===2)) onUpdate(e.data===1, e.target.getCurrentTime()); }
                     }
                 });
-                const interval = setInterval(syncLoop, 1000);
-                return () => { clearInterval(interval); if(playerRef.current) try { playerRef.current.destroy(); } catch(e){} };
+                const i = setInterval(() => {
+                    if(!playerRef.current?.getPlayerState || isHost) return;
+                    const t = partyState.isPlaying ? partyState.timestamp + (Date.now()-partyState.lastUpdated)/1000 : partyState.timestamp;
+                    if(Math.abs(playerRef.current.getCurrentTime() - t) > 2) playerRef.current.seekTo(t, true);
+                    const s = playerRef.current.getPlayerState();
+                    if(partyState.isPlaying && s!==1 && s!==3) playerRef.current.playVideo();
+                    if(!partyState.isPlaying && s===1) playerRef.current.pauseVideo();
+                }, 1000);
+                return () => { clearInterval(i); try{playerRef.current.destroy()}catch(e){} };
             }, [videoId]);
-
-            const calculateTime = (state) => !state.isPlaying ? state.timestamp : state.timestamp + (Date.now() - state.lastUpdated) / 1000;
-
-            const syncLoop = () => {
-                if (!playerRef.current?.getPlayerState || isHost) return;
-                const pState = playerRef.current.getPlayerState();
-                const current = playerRef.current.getCurrentTime();
-                const target = calculateTime(partyState);
-                if (Math.abs(current - target) > 2) playerRef.current.seekTo(target, true);
-                if (partyState.isPlaying && pState !== 1 && pState !== 3) playerRef.current.playVideo();
-                if (!partyState.isPlaying && pState === 1) playerRef.current.pauseVideo();
-            };
-
-            return <div id="yt-player" className="w-full h-full bg-black"></div>;
+            return <div id="yt-player" className="w-full h-full"></div>;
         };
 
-        // --- COMPONENTE: CRUNCHYROLL INTERFACE (SIMULACIÓN) ---
-        const CrunchyInterface = ({ party, isHost, onUpdate }) => {
-            const [isLoggedIn, setIsLoggedIn] = useState(false);
-            const [email, setEmail] = useState('');
-            const [password, setPassword] = useState('');
-            const [currentTime, setCurrentTime] = useState(party.timestamp);
+        // --- COMPONENTE: NAVEGADOR INTEGRADO (EXPERIMENTAL) ---
+        const WebBrowserPlayer = ({ url, isHost }) => {
+            const [blocked, setBlocked] = useState(false);
 
-            // Simular cronómetro local para suavidad visual
-            useEffect(() => {
-                let interval;
-                if (party.isPlaying) {
-                    interval = setInterval(() => {
-                        setCurrentTime(prev => prev + 1);
-                    }, 1000);
-                } else {
-                    setCurrentTime(party.timestamp);
-                }
-                return () => clearInterval(interval);
-            }, [party.isPlaying, party.timestamp, party.lastUpdated]);
-
-            // Forzar actualización del tiempo real al recibir props
-            useEffect(() => {
-                if (party.isPlaying) {
-                    const realTime = party.timestamp + (Date.now() - party.lastUpdated) / 1000;
-                    setCurrentTime(realTime);
-                } else {
-                    setCurrentTime(party.timestamp);
-                }
-            }, [party.lastUpdated]);
-
-            const handleLogin = (e) => {
-                e.preventDefault();
-                // Simulación de login
-                setTimeout(() => setIsLoggedIn(true), 1000);
-            };
-
-            const formatTime = (seconds) => {
-                const min = Math.floor(seconds / 60);
-                const sec = Math.floor(seconds % 60);
-                return `${min}:${sec < 10 ? '0' : ''}${sec}`;
-            };
-
-            // PANTALLA 1: LOGIN
-            if (!isLoggedIn) {
-                return (
-                    <div className="w-full h-full cr-bg flex items-center justify-center relative">
-                        <div className="absolute top-8 left-8">
-                             {/* Logo Fake */}
-                             <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-full bg-[#f47521]"></div>
-                                <span className="font-bold text-xl tracking-tighter">Crunchyroll</span>
-                             </div>
-                        </div>
-                        
-                        <div className="glass p-8 rounded-xl w-full max-w-md border border-[#f47521]/20">
-                            <h2 className="text-2xl font-bold mb-4">Iniciar Sesión</h2>
-                            <form onSubmit={handleLogin} className="space-y-4">
-                                <div>
-                                    <label className="text-xs text-slate-400 font-bold uppercase">Email o Nombre de Usuario</label>
-                                    <input 
-                                        type="email" 
-                                        value={email} 
-                                        onChange={(e) => setEmail(e.target.value)} 
-                                        className="w-full bg-black/50 border border-slate-700 rounded p-3 mt-1 text-white focus:border-[#f47521] outline-none transition" 
-                                        placeholder="user@example.com"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-slate-400 font-bold uppercase">Contraseña</label>
-                                    <input 
-                                        type="password" 
-                                        value={password} 
-                                        onChange={(e) => setPassword(e.target.value)} 
-                                        className="w-full bg-black/50 border border-slate-700 rounded p-3 mt-1 text-white focus:border-[#f47521] outline-none transition" 
-                                        placeholder="••••••••"
-                                    />
-                                </div>
-                                <button type="submit" className="w-full cr-btn py-3 rounded text-sm hover:scale-[1.02] transition">Acceder</button>
-                                <div className="text-center text-xs text-slate-500 mt-4">Simulación - No ingreses datos reales</div>
-                            </form>
-                        </div>
-                    </div>
-                );
-            }
-
-            // PANTALLA 2: CONTROLADOR SINCRONIZADO
+            // Intentamos cargar. Si falla (por CSP), el usuario verá blanco o error.
             return (
-                <div className="w-full h-full cr-bg flex flex-col items-center justify-center relative overflow-hidden">
-                    {/* Fondo decorativo */}
-                    <div className="absolute inset-0 bg-[url('https://i.pinimg.com/originals/8c/17/30/8c1730704938a1353c896503c5d6c8e3.jpg')] bg-cover opacity-10 bg-center pointer-events-none"></div>
+                <div className="w-full h-full relative bg-white">
+                    {!blocked ? (
+                        <iframe 
+                            src={url} 
+                            className="w-full h-full"
+                            allow="autoplay; encrypted-media; fullscreen"
+                            onError={() => setBlocked(true)}
+                        />
+                    ) : (
+                        <div className="absolute inset-0 bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
+                            <AlertTriangle size={48} className="text-yellow-500 mb-4"/>
+                            <h3 className="text-xl font-bold mb-2">Sitio Protegido</h3>
+                            <p className="text-slate-400 mb-6">Este sitio web bloquea la reproducción dentro de otras apps.</p>
+                            <a href={url} target="_blank" className="bg-blue-600 px-6 py-3 rounded-full font-bold">Abrir en Pestaña Nueva</a>
+                        </div>
+                    )}
                     
-                    <div className="relative z-10 w-full max-w-4xl p-6">
-                        {/* Header del Controlador */}
-                        <div className="flex items-center justify-between mb-8">
-                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-[#f47521] flex items-center justify-center font-bold text-black">CR</div>
-                                <div>
-                                    <h2 className="text-xl font-bold">Sala de Sincronización</h2>
-                                    <div className="flex items-center gap-2 text-xs text-[#f47521]">
-                                        <div className="w-2 h-2 rounded-full bg-[#f47521] animate-pulse"></div>
-                                        EN VIVO
-                                    </div>
-                                </div>
-                             </div>
-                             
-                             <a href="https://www.crunchyroll.com" target="_blank" className="flex items-center gap-2 border border-[#f47521] text-[#f47521] px-4 py-2 rounded font-bold hover:bg-[#f47521]/10 transition text-sm">
-                                <ExternalLink size={16}/> Abrir Crunchyroll
-                             </a>
-                        </div>
-
-                        {/* El "Player" Falso (Timer Gigante) */}
-                        <div className="glass aspect-video rounded-xl flex flex-col items-center justify-center border-t border-[#f47521]/30 relative overflow-hidden group">
-                            <div className="absolute inset-0 bg-black/40"></div>
-                            
-                            <div className="relative z-20 text-center space-y-6">
-                                <div className="text-6xl md:text-8xl font-mono font-black tracking-tighter tabular-nums text-white drop-shadow-[0_0_15px_rgba(244,117,33,0.5)]">
-                                    {formatTime(currentTime)}
-                                </div>
-                                <p className="text-slate-400 text-sm font-medium tracking-widest uppercase">Tiempo de Reproducción Global</p>
-                                
-                                {/* Controles (Solo Host) */}
-                                {isHost ? (
-                                    <div className="flex items-center justify-center gap-6 pt-4">
-                                        <button 
-                                            onClick={() => onUpdate(!party.isPlaying)}
-                                            className="w-20 h-20 rounded-full bg-[#f47521] text-black flex items-center justify-center hover:scale-110 transition shadow-[0_0_30px_rgba(244,117,33,0.4)]"
-                                        >
-                                            {party.isPlaying ? <Pause size={40} fill="black"/> : <Play size={40} fill="black" className="ml-1"/>}
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="text-[#f47521] font-bold mt-4 animate-pulse">Sincronizado con el Host</div>
-                                )}
-                            </div>
-                            
-                            {/* Barra de Progreso Falsa */}
-                            <div className="absolute bottom-0 left-0 w-full h-2 bg-white/10">
-                                <div 
-                                    className="h-full bg-[#f47521] transition-all duration-1000 ease-linear"
-                                    style={{ width: `${(currentTime % 60) / 60 * 100}%` }} // Demo loop
-                                ></div>
-                            </div>
-                        </div>
-
-                        <div className="mt-6 text-center text-sm text-slate-500 max-w-lg mx-auto">
-                            Instrucciones: Abre el capítulo en otra pestaña. Cuando el host presione Play aquí, presiona Play en tu video. Usa este reloj para asegurarte de ir al mismo segundo.
-                        </div>
+                    {/* Botón de pánico si sale blanco */}
+                    <div className="absolute top-2 right-2 z-50">
+                        <button onClick={() => setBlocked(true)} className="bg-black/50 p-2 rounded-full text-white text-xs backdrop-blur-md border border-white/20">
+                            ¿No carga?
+                        </button>
                     </div>
                 </div>
             );
@@ -259,91 +179,146 @@
             const [party, setParty] = useState(null);
             const [messages, setMessages] = useState([]);
             const [input, setInput] = useState('');
+            const [search, setSearch] = useState('');
+            const [showUsers, setShowUsers] = useState(false);
             const chatRef = useRef(null);
-
+            const { isMuted, toggleMute, audioGridRef } = useVoiceChat(user, partyId, party?.users);
+            
             const isHost = party?.hostId === user.uid;
 
             useEffect(() => {
-                const partyRef = doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`);
-                updateDoc(partyRef, { users: arrayUnion({ uid: user.uid, name: user.displayName, photo: user.photoURL, isOnline: true }) });
-                const unsub = onSnapshot(partyRef, (doc) => {
-                    if (doc.exists()) {
-                        setParty(doc.data());
-                        setMessages(doc.data().messages || []);
-                    } else { alert("Sala cerrada"); onLeave(); }
+                const ref = doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`);
+                updateDoc(ref, { users: arrayUnion({ uid: user.uid, name: user.displayName, photo: user.photoURL }) });
+                const unsub = onSnapshot(ref, d => {
+                    if(d.exists()) { setParty(d.data()); setMessages(d.data().messages || []); }
+                    else { alert("Sala cerrada"); onLeave(); }
                 });
-                return () => {
-                    updateDoc(partyRef, { users: arrayRemove({ uid: user.uid, name: user.displayName, photo: user.photoURL, isOnline: true }) });
-                    unsub();
-                };
+                return () => { updateDoc(ref, { users: arrayRemove({ uid: user.uid, name: user.displayName, photo: user.photoURL }) }); unsub(); };
             }, [partyId]);
 
             useEffect(() => chatRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages]);
 
-            const updatePlayState = async (playing) => {
-                if (!isHost) return;
-                let timestamp = party.timestamp;
-                if (party.isPlaying) {
-                    timestamp += (Date.now() - party.lastUpdated) / 1000;
-                }
+            const handleUpdate = async (playing, time) => {
                 await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
-                    isPlaying: playing, timestamp, lastUpdated: Date.now(),
-                    messages: arrayUnion({ id: Date.now(), system: true, text: playing ? '▶️ Play' : '⏸️ Pausa' })
+                    isPlaying: playing, timestamp: time, lastUpdated: Date.now()
                 });
             };
 
-            const sendMessage = async (e) => {
-                e.preventDefault();
-                if (!input.trim()) return;
+            const loadContent = async () => {
+                if(!isHost) return;
+                const ytId = getYouTubeId(search);
+                // Si es youtube ID, guardamos ID. Si no, guardamos URL completa para el iframe.
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
+                    currentVideoId: ytId || search, // search actúa como URL directa
+                    service: ytId ? 'youtube' : 'web',
+                    isPlaying: true, timestamp: 0, lastUpdated: Date.now(),
+                    messages: arrayUnion({ id: Date.now(), system: true, text: '📺 Contenido cambiado' })
+                });
+                setSearch('');
+            };
+
+            const send = async (e) => {
+                e.preventDefault(); if(!input.trim()) return;
                 await updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), {
                     messages: arrayUnion({ id: Date.now(), text: input, sender: user.displayName, photo: user.photoURL, timestamp: Date.now() })
                 });
                 setInput('');
             };
 
-            if (!party) return <div className="h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin mr-2"/> Cargando...</div>;
+            if(!party) return <div className="h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin"/></div>;
 
             return (
-                <div className="flex flex-col md:flex-row h-screen bg-black overflow-hidden">
-                    <div className="flex-1 flex flex-col relative group">
-                        <div className="absolute top-0 w-full p-4 flex justify-between items-start z-20 pointer-events-none">
-                            <div className="glass px-3 py-1 rounded-full flex items-center gap-2 pointer-events-auto cursor-pointer text-white" onClick={() => {navigator.clipboard.writeText(window.location.href); alert("Link Copiado!")}}>
-                                <span className="text-xs font-bold tracking-widest">INVITAR</span>
-                                <LinkIcon size={12}/>
+                <div className="mobile-layout bg-black h-screen w-full overflow-hidden">
+                    <div ref={audioGridRef} className="hidden"></div>
+
+                    {/* 1. SECCIÓN VIDEO (Arriba en móvil, Izquierda en PC) */}
+                    <div className="w-full md:flex-1 h-[35vh] md:h-full relative flex flex-col bg-black z-10 shadow-xl">
+                        {/* Header Flotante */}
+                        <div className="absolute top-0 left-0 w-full p-2 md:p-4 flex justify-between items-start z-20 pointer-events-none bg-gradient-to-b from-black/80 to-transparent">
+                            <div className="flex gap-2 pointer-events-auto">
+                                <div className="glass px-3 py-1.5 rounded-full flex items-center gap-2 cursor-pointer" onClick={() => {navigator.clipboard.writeText(window.location.href); alert("Link copiado")}}>
+                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                    <span className="text-xs font-bold tracking-widest hidden md:inline">INVITAR</span>
+                                    <LinkIcon size={14}/>
+                                </div>
+                                <button onClick={toggleMute} className={`glass px-3 py-1.5 rounded-full ${isMuted?'text-red-400':'text-green-400'}`}>
+                                    {isMuted ? <MicOff size={14}/> : <Mic size={14}/>}
+                                </button>
                             </div>
-                            <button onClick={onLeave} className="glass p-2 rounded-full hover:bg-red-600/50 pointer-events-auto text-white"><LogOut size={18}/></button>
+                            <div className="flex gap-2 pointer-events-auto">
+                                <button onClick={()=>setShowUsers(!showUsers)} className="glass p-2 rounded-full md:hidden relative">
+                                    <Users size={16}/>
+                                    <span className="absolute -top-1 -right-1 bg-red-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center">{party.users?.length}</span>
+                                </button>
+                                <button onClick={onLeave} className="glass p-2 rounded-full hover:bg-red-600/50"><LogOut size={16}/></button>
+                            </div>
                         </div>
 
-                        <div className="flex-1 bg-black flex items-center justify-center relative">
-                            {party.service === 'crunchyroll' ? (
-                                <CrunchyInterface party={party} isHost={isHost} onUpdate={updatePlayState} />
+                        {/* Player Container */}
+                        <div className="flex-1 relative">
+                            {party.currentVideoId ? (
+                                party.service === 'youtube' ? (
+                                    <YouTubePlayer videoId={party.currentVideoId} partyState={party} isHost={isHost} onUpdate={handleUpdate} />
+                                ) : (
+                                    <WebBrowserPlayer url={party.currentVideoId} isHost={isHost} />
+                                )
                             ) : (
-                                <YouTubePlayer videoId={party.currentVideoId} partyState={party} isHost={isHost} onPlayerUpdate={updatePlayState} />
+                                <div className="h-full flex flex-col items-center justify-center text-slate-500 bg-slate-900">
+                                    <MonitorPlay size={48} className="mb-4 opacity-50"/>
+                                    <p className="text-sm">Esperando contenido...</p>
+                                </div>
                             )}
                         </div>
+
+                        {/* Barra de Control (Host Only) - Ahora compacta para móvil */}
+                        {isHost && (
+                            <div className="p-2 md:p-4 bg-slate-900 border-t border-white/10 flex gap-2 items-center">
+                                <div className="flex-1 bg-black/50 border border-slate-700 rounded-full px-3 py-2 flex items-center gap-2">
+                                    <Globe size={14} className="text-slate-400"/>
+                                    <input 
+                                        className="bg-transparent border-none outline-none w-full text-xs md:text-sm text-white" 
+                                        placeholder="Link de YouTube, Crunchyroll, etc..." 
+                                        value={search} onChange={e=>setSearch(e.target.value)}
+                                    />
+                                </div>
+                                <button onClick={loadContent} className="bg-purple-600 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap">IR</button>
+                            </div>
+                        )}
                     </div>
 
-                    <div className="w-80 glass-panel flex flex-col z-30 transition-all duration-300 absolute md:relative right-0 h-full">
-                        <div className="h-14 border-b border-white/10 flex items-center justify-between px-4">
-                            <div className="flex items-center gap-2 text-xs font-bold tracking-widest text-slate-400">
-                                <Users size={14}/> {party.users?.length || 0} EN SALA
+                    {/* 2. SECCIÓN CHAT (Abajo en móvil, Derecha en PC) */}
+                    <div className="flex-1 md:w-80 md:flex-none flex flex-col bg-slate-950 border-t md:border-t-0 md:border-l border-slate-800 min-h-0 relative">
+                        
+                        {/* Lista de Usuarios (Overlay en móvil) */}
+                        {showUsers && (
+                            <div className="absolute inset-0 bg-slate-900/95 z-30 p-4 animate-fade-in md:hidden">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-bold">Usuarios en Sala</h3>
+                                    <button onClick={()=>setShowUsers(false)}><X/></button>
+                                </div>
+                                {party.users?.map((u,i) => (
+                                    <div key={i} className="flex items-center gap-3 p-2 border-b border-white/5">
+                                        <img src={u.photo} className="w-8 h-8 rounded-full"/>
+                                        <span>{u.name}</span>
+                                        {u.uid===party.hostId && <Crown size={14} className="text-yellow-400"/>}
+                                    </div>
+                                ))}
                             </div>
-                        </div>
+                        )}
 
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-black/40">
+                        {/* Chat Messages */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
                             {messages.map((m, i) => (
-                                <div key={i} className={`flex flex-col animate-pop ${m.system ? 'items-center opacity-60 my-2' : ''}`}>
-                                    {m.system ? (
-                                        <span className="text-[10px] border border-white/20 px-2 py-0.5 rounded-full">{m.text}</span>
-                                    ) : (
-                                        <div className="flex gap-3">
-                                            <img src={m.photo} className="w-8 h-8 rounded-full bg-slate-800 mt-1"/>
+                                <div key={i} className={`flex flex-col ${m.system ? 'items-center opacity-60 my-2' : ''}`}>
+                                    {m.system ? <span className="text-[10px] bg-white/10 px-2 py-1 rounded-full">{m.text}</span> : (
+                                        <div className="flex gap-2">
+                                            <img src={m.photo} className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-slate-800 flex-shrink-0"/>
                                             <div className="min-w-0">
                                                 <div className="flex items-baseline gap-2">
                                                     <span className="text-xs font-bold text-slate-300">{m.sender}</span>
-                                                    <span className="text-[10px] text-slate-600 opacity-50">{new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                                    <span className="text-[9px] text-slate-600">{new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                                                 </div>
-                                                <p className="text-sm text-slate-200 break-words">{m.text}</p>
+                                                <p className="text-sm text-slate-200 break-words leading-tight">{m.text}</p>
                                             </div>
                                         </div>
                                     )}
@@ -352,9 +327,16 @@
                             <div ref={chatRef}></div>
                         </div>
 
-                        <form onSubmit={sendMessage} className="p-3 bg-slate-900 border-t border-white/10 flex gap-2">
-                            <input className="flex-1 bg-black border border-slate-700 rounded px-3 py-2 text-sm focus:border-[#f47521] outline-none transition" placeholder="Chat..." value={input} onChange={e=>setInput(e.target.value)}/>
-                            <button type="submit" className="bg-[#f47521] hover:bg-[#ff9d5c] p-2 rounded text-black font-bold"><Send size={16}/></button>
+                        {/* Input Area */}
+                        <form onSubmit={send} className="p-2 md:p-3 bg-slate-900 border-t border-white/10 flex gap-2 items-center safe-area-pb">
+                            <input 
+                                className="flex-1 bg-black border border-slate-700 rounded-full px-4 py-2.5 text-sm focus:border-purple-500 outline-none transition" 
+                                placeholder="Di algo..." 
+                                value={input} onChange={e=>setInput(e.target.value)}
+                            />
+                            <button type="submit" className="p-2.5 bg-purple-600 rounded-full text-white shadow-lg hover:bg-purple-500 active:scale-95 transition">
+                                <Send size={18}/>
+                            </button>
                         </form>
                     </div>
                 </div>
@@ -373,56 +355,46 @@
                 });
             }, []);
 
-            const create = async (service) => {
+            const create = async () => {
                 const id = generateId();
                 await setDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${id}`), {
-                    hostId: user.uid, service, currentVideoId: service === 'youtube' ? 'dQw4w9WgXcQ' : '', isPlaying: false, timestamp: 0, lastUpdated: Date.now(),
-                    users: [], messages: []
+                    hostId: user.uid, currentVideoId: '', service: 'youtube', isPlaying: false, timestamp: 0, lastUpdated: Date.now(), users: [], messages: []
                 });
                 setActivePartyId(id);
                 window.history.pushState({}, '', `?room=${id}`);
             };
 
             if (!user) return (
-                <div className="h-screen bg-black flex items-center justify-center p-6 text-center relative overflow-hidden">
-                    <div className="relative z-10 glass p-10 rounded-3xl max-w-md w-full border-t border-white/20 shadow-2xl">
-                        <h1 className="text-5xl font-black mb-2 tracking-tighter gradient-text">StreamParty</h1>
-                        <p className="text-slate-400 mb-8 font-medium">Crunchyroll & YouTube Sync</p>
-                        <button onClick={() => signInWithPopup(auth, new GoogleAuthProvider())} className="w-full bg-white text-black font-bold py-4 rounded-xl hover:scale-[1.02] transition shadow-xl flex items-center justify-center gap-3">
-                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5"/> Entrar con Google
-                        </button>
+                <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-20 h-20 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mb-6 shadow-2xl animate-bounce">
+                        <Zap size={40} className="text-white"/>
                     </div>
+                    <h1 className="text-4xl font-black mb-2 tracking-tighter text-white">StreamParty</h1>
+                    <p className="text-slate-400 mb-8 font-medium text-sm">Tu cine de bolsillo con amigos</p>
+                    <button onClick={() => signInWithPopup(auth, new GoogleAuthProvider())} className="bg-white text-black font-bold py-3 px-8 rounded-full shadow-lg active:scale-95 transition flex items-center gap-2">
+                        <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5"/> Entrar con Google
+                    </button>
                 </div>
             );
 
             if (activePartyId) return <PartyRoom partyId={activePartyId} user={user} onLeave={() => {setActivePartyId(null); window.history.pushState({}, '', window.location.pathname);}} />;
 
             return (
-                <div className="h-screen bg-slate-950 flex items-center justify-center p-4">
-                    <div className="glass p-8 rounded-2xl max-w-4xl w-full text-center space-y-8 border-t border-white/10">
-                        <div>
-                            <h2 className="text-3xl font-bold text-white mb-2">Elige tu Servicio</h2>
-                            <p className="text-slate-400">¿Qué vamos a ver hoy?</p>
+                <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
+                    <div className="w-full max-w-sm bg-slate-900 p-6 rounded-3xl border border-white/5 shadow-2xl text-center">
+                        <img src={user.photoURL} className="w-16 h-16 rounded-full mx-auto border-2 border-purple-500 mb-4"/>
+                        <h2 className="text-xl font-bold text-white mb-6">Hola, {user.displayName.split(' ')[0]}</h2>
+                        
+                        <button onClick={create} className="w-full bg-gradient-to-r from-purple-600 to-pink-600 py-3.5 rounded-xl font-bold text-white shadow-lg active:scale-95 transition mb-4 flex justify-center items-center gap-2">
+                            <Zap size={18}/> CREAR SALA
+                        </button>
+                        
+                        <div className="flex gap-2 mb-6">
+                            <input id="code" placeholder="CÓDIGO" className="bg-black border border-slate-700 rounded-xl px-4 flex-1 text-center font-mono uppercase focus:border-purple-500 outline-none text-white text-sm"/>
+                            <button onClick={() => setActivePartyId(document.getElementById('code').value.toUpperCase())} className="bg-slate-800 text-white px-4 rounded-xl font-bold text-sm">ENTRAR</button>
                         </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <button onClick={() => create('youtube')} className="bg-red-600 hover:bg-red-700 p-8 rounded-2xl flex flex-col items-center justify-center gap-4 transition group">
-                                <MonitorPlay size={48} className="text-white group-hover:scale-110 transition"/>
-                                <span className="font-bold text-2xl">YouTube</span>
-                            </button>
-                            <button onClick={() => create('crunchyroll')} className="bg-[#f47521] hover:bg-[#ff9d5c] p-8 rounded-2xl flex flex-col items-center justify-center gap-4 transition group">
-                                <Zap size={48} className="text-black group-hover:scale-110 transition"/>
-                                <span className="font-bold text-2xl text-black">Crunchyroll</span>
-                            </button>
-                        </div>
-
-                        <div className="pt-4 border-t border-white/10">
-                            <div className="flex gap-2 max-w-sm mx-auto">
-                                <input id="code" placeholder="CÓDIGO SALA" className="bg-black/50 border border-slate-700 rounded-xl px-4 flex-1 text-center font-mono uppercase focus:border-purple-500 outline-none text-white"/>
-                                <button onClick={() => setActivePartyId(document.getElementById('code').value.toUpperCase())} className="bg-slate-800 text-white px-6 rounded-xl font-bold hover:bg-slate-700">ENTRAR</button>
-                            </div>
-                        </div>
-                        <button onClick={() => signOut(auth)} className="text-xs text-red-400 hover:text-red-300">Cerrar Sesión</button>
+                        <button onClick={() => signOut(auth)} className="text-xs text-red-400 font-medium">Cerrar Sesión</button>
                     </div>
                 </div>
             );
