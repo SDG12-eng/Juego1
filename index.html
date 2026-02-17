@@ -3,26 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>StreamParty v13</title>
+    <title>StreamParty Ultimate</title>
     <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     
     <!-- Librerías -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <script>
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: { sans: ['Manrope', 'sans-serif'] },
+                    fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] },
                     colors: {
+                        brand: '#6366f1',
                         dark: '#050505',
-                        panel: '#121212',
-                        brand: '#6366f1'
+                        panel: '#121212'
                     }
                 }
             }
@@ -30,36 +32,39 @@
     </script>
 
     <style>
-        /* Fix crítico para móviles: usar dvh para altura dinámica */
-        body { background-color: #000; color: #fff; overflow: hidden; height: 100dvh; width: 100vw; margin: 0; padding: 0; }
+        /* Reset y Base */
+        body, html { margin: 0; padding: 0; background-color: #000; color: #fff; overflow: hidden; height: 100%; width: 100%; }
         #root { height: 100%; width: 100%; }
 
-        .glass { background: rgba(30, 30, 30, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        
-        /* Layouts específicos */
-        .layout-mobile { display: flex; flex-direction: column; height: 100dvh; }
-        .layout-desktop { display: flex; flex-direction: row; height: 100dvh; }
-        
-        .video-container { background: #000; position: relative; }
-        
-        /* En móvil, el video ocupa un área fija arriba */
-        @media (max-width: 1023px) {
-            .video-slot { height: 35%; flex-shrink: 0; position: relative; z-index: 10; }
-            .chat-slot { height: 65%; flex-grow: 1; background: #121212; display: flex; flex-direction: column; }
-        }
-        
-        /* En PC, el video ocupa el espacio principal */
-        @media (min-width: 1024px) {
-            .video-slot { flex: 1; height: 100%; position: relative; }
-            .chat-slot { width: 400px; height: 100%; border-left: 1px solid #333; background: #0f0f0f; display: flex; flex-direction: column; }
+        /* Estructura GRID (La solución al layout roto) */
+        .app-grid {
+            display: grid;
+            height: 100dvh; /* Altura dinámica móvil */
+            width: 100vw;
+            overflow: hidden;
         }
 
-        iframe { border: none; width: 100%; height: 100%; }
+        /* Desktop: 1fr (Video) | 380px (Chat) */
+        @media (min-width: 1024px) {
+            .app-grid { grid-template-columns: 1fr 380px; grid-template-rows: 1fr; }
+            .video-area { grid-column: 1; grid-row: 1; height: 100%; position: relative; }
+            .chat-area { grid-column: 2; grid-row: 1; height: 100%; border-left: 1px solid #222; }
+        }
+
+        /* Mobile: 35% (Video) | Auto (Chat) */
+        @media (max-width: 1023px) {
+            .app-grid { grid-template-columns: 1fr; grid-template-rows: 35% 1fr; }
+            .video-area { grid-column: 1; grid-row: 1; height: 100%; position: relative; z-index: 10; }
+            .chat-area { grid-column: 1; grid-row: 2; height: 100%; background: #121212; border-top: 1px solid #222; }
+        }
+
+        /* Utilidades */
+        .glass { background: rgba(20, 20, 20, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .web-frame { width: 100%; height: 100%; border: none; background: #fff; }
         
-        /* Animaciones */
-        .animate-enter { animation: enter 0.3s ease-out; }
-        @keyframes enter { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .mic-btn { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .mic-active { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.2); transform: scale(1.05); }
     </style>
 </head>
 <body>
@@ -89,14 +94,19 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const APP_ID = 'sp-v13-stable'; 
+        const APP_ID = 'sp-v14-ultimate'; 
 
         // --- SERVICIOS ---
+        // Aquí agregamos todas las apps que pediste
         const SERVICES = [
             { id: 'youtube', name: 'YouTube', color: 'bg-red-600', icon: 'fa-youtube', url: '' },
             { id: 'crunchyroll', name: 'Crunchyroll', color: 'bg-orange-500', icon: 'fa-bolt', url: 'https://www.crunchyroll.com' },
             { id: 'netflix', name: 'Netflix', color: 'bg-red-800', icon: 'fa-n', url: 'https://www.netflix.com' },
-            { id: 'web', name: 'Navegador', color: 'bg-blue-600', icon: 'fa-globe', url: 'https://www.google.com' }
+            { id: 'disney', name: 'Disney+', color: 'bg-blue-600', icon: 'fa-d', url: 'https://www.disneyplus.com' },
+            { id: 'prime', name: 'Prime Video', color: 'bg-sky-600', icon: 'fa-amazon', url: 'https://www.primevideo.com' },
+            { id: 'hbo', name: 'Max', color: 'bg-purple-700', icon: 'fa-circle-play', url: 'https://www.max.com' },
+            { id: 'twitch', name: 'Twitch', color: 'bg-purple-600', icon: 'fa-twitch', url: 'https://www.twitch.tv' },
+            { id: 'web', name: 'Navegador', color: 'bg-slate-700', icon: 'fa-globe', url: 'https://www.google.com' }
         ];
 
         const generateId = () => Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -106,7 +116,7 @@
             return (match && match[2].length === 11) ? match[2] : null;
         };
 
-        // --- COMPONENTE: AUDIO ---
+        // --- AUDIO P2P ---
         const VoiceHandler = ({ user, partyId, users }) => {
             const [muted, setMuted] = useState(false);
             const peerRef = useRef(null);
@@ -121,7 +131,7 @@
                         streamRef.current = s;
                         peerRef.current = peer;
                         peer.on('call', c => { c.answer(s); c.on('stream', addAudio); });
-                    }).catch(e => console.warn("Micrófono no disponible"));
+                    }).catch(e => console.warn("Sin micro"));
                 });
                 return () => { peer.destroy(); streamRef.current?.getTracks().forEach(t=>t.stop()); };
             }, [user, partyId]);
@@ -150,33 +160,50 @@
             };
 
             return (
-                <div className="fixed bottom-24 right-4 z-50 lg:bottom-8 lg:left-8 lg:right-auto">
+                <div className="fixed bottom-24 right-4 z-50 lg:bottom-6 lg:left-6 lg:right-auto">
                     <div ref={containerRef} className="hidden"></div>
-                    <button onClick={toggle} className={`h-12 w-12 rounded-full shadow-xl flex items-center justify-center transition-all ${muted ? 'bg-red-500 text-white' : 'bg-green-500 text-black animate-pulse'}`}>
+                    <button onClick={toggle} className={`mic-btn h-12 w-12 rounded-full shadow-2xl flex items-center justify-center ${muted ? 'bg-red-500 text-white' : 'bg-green-500 text-black mic-active'}`}>
                         {muted ? <MicOff size={20}/> : <Mic size={20}/>}
                     </button>
                 </div>
             );
         };
 
-        // --- WEB BROWSER ---
+        // --- NAVEGADOR WEB (SOLUCIÓN RAYITA) ---
         const WebBrowser = ({ url, isHost, onNavigate }) => {
             const [input, setInput] = useState(url);
             useEffect(() => setInput(url), [url]);
 
             return (
-                <div className="flex flex-col h-full bg-white">
-                    <div className="flex-1 relative bg-slate-100">
-                        <iframe src={url} allow="autoplay; encrypted-media; fullscreen" sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-presentation"/>
-                    </div>
+                <div className="flex flex-col h-full w-full bg-white relative">
+                    {/* Barra de Navegación del Host (Arriba, estilo navegador) */}
                     {isHost && (
-                        <div className="bg-slate-900 p-2 flex gap-2 items-center border-t border-slate-700">
+                        <div className="bg-slate-900 p-2 flex gap-2 items-center border-b border-white/10 shrink-0 z-20">
+                            <div className="bg-slate-800 p-1.5 rounded text-slate-400"><Globe size={14}/></div>
                             <form onSubmit={(e)=>{e.preventDefault(); onNavigate(input)}} className="flex-1 flex gap-2">
-                                <input className="flex-1 bg-black border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand outline-none" value={input} onChange={e=>setInput(e.target.value)} placeholder="URL https://..."/>
-                                <button type="submit" className="bg-brand text-white font-bold px-4 rounded-lg text-sm">IR</button>
+                                <input 
+                                    className="flex-1 bg-black border border-slate-700 rounded px-3 py-1.5 text-xs text-white focus:border-brand outline-none font-mono" 
+                                    value={input} onChange={e=>setInput(e.target.value)} placeholder="https://..."
+                                />
+                                <button type="submit" className="bg-brand text-white font-bold px-3 py-1.5 rounded text-xs hover:bg-indigo-500">IR</button>
                             </form>
                         </div>
                     )}
+
+                    {/* Iframe que ocupa el 100% restante */}
+                    <div className="flex-1 relative w-full h-full bg-slate-100 overflow-hidden">
+                        <iframe 
+                            src={url} 
+                            className="web-frame"
+                            allow="autoplay; encrypted-media; fullscreen; microphone; camera"
+                            sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-presentation"
+                        />
+                        
+                        {/* Botón flotante para abrir externo si falla */}
+                        <a href={url} target="_blank" className="absolute bottom-4 right-4 bg-black/80 backdrop-blur text-white text-xs px-3 py-2 rounded-full flex items-center gap-2 hover:bg-black border border-white/20 shadow-lg pointer-events-auto z-10 opacity-70 hover:opacity-100 transition">
+                            <ExternalLink size={12}/> Abrir Externo
+                        </a>
+                    </div>
                 </div>
             );
         };
@@ -207,12 +234,12 @@
             return <div id="yt-player" className="w-full h-full bg-black"></div>;
         };
 
-        // --- PARTY ROOM ---
+        // --- SALA DE FIESTA ---
         const PartyRoom = ({ partyId, user, onLeave }) => {
             const [party, setParty] = useState(null);
             const [msgs, setMsgs] = useState([]);
             const [txt, setTxt] = useState('');
-            const [search, setSearch] = useState('');
+            const [ytSearch, setYtSearch] = useState('');
             const chatRef = useRef(null);
             const isHost = party?.hostId === user.uid;
 
@@ -234,11 +261,11 @@
                 let updates = { currentVideoId: val, isPlaying: true, timestamp: 0, lastUpdated: Date.now() };
                 if (party.service === 'youtube') {
                     const id = getYouTubeId(val);
-                    if(!id) return alert("Link Youtube inválido");
+                    if(!id) return alert("Link inválido");
                     updates.currentVideoId = id;
                 }
-                updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), { ...updates, messages: arrayUnion({ id: Date.now(), system: true, text: 'Cambió el contenido' }) });
-                setSearch('');
+                updateDoc(doc(db, 'artifacts', APP_ID, 'parties', `party_${partyId}`), { ...updates, messages: arrayUnion({ id: Date.now(), system: true, text: 'Cambio de contenido' }) });
+                setYtSearch('');
             };
 
             const send = async (e) => {
@@ -249,60 +276,62 @@
                 setTxt('');
             };
 
-            if(!party) return <div className="h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin mr-2"/> Cargando...</div>;
+            if(!party) return <div className="h-screen bg-black flex items-center justify-center text-white"><Loader2 className="animate-spin"/></div>;
 
             return (
-                <div className="layout-mobile lg:layout-desktop bg-black overflow-hidden">
+                <div className="app-grid bg-black">
                     <VoiceHandler user={user} partyId={partyId} users={party.users} />
 
-                    {/* AREA 1: VIDEO (Top en movil, Left en PC) */}
-                    <div className="video-slot bg-black border-b lg:border-b-0 lg:border-r border-white/10">
-                        {/* Header Overlay */}
-                        <div className="absolute top-0 left-0 w-full p-2 z-20 flex justify-between pointer-events-none bg-gradient-to-b from-black/80 to-transparent">
-                            <div className="pointer-events-auto bg-black/50 backdrop-blur px-3 py-1 rounded-full flex items-center gap-2 border border-white/10" onClick={() => {navigator.clipboard.writeText(partyId); alert("Copiado")}}>
-                                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                                <span className="text-xs font-bold text-white tracking-widest">{partyId}</span>
-                                <Copy size={12} className="text-white/70"/>
+                    {/* ZONA VIDEO (GRID AREA 1) */}
+                    <div className="video-area bg-black border-b lg:border-b-0 lg:border-r border-white/10 flex flex-col">
+                        {/* Header Transparente */}
+                        <div className="absolute top-0 left-0 w-full p-3 z-30 flex justify-between pointer-events-none bg-gradient-to-b from-black/90 to-transparent">
+                            <div className="pointer-events-auto bg-black/60 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/10 shadow-lg cursor-pointer hover:bg-white/10 transition" onClick={() => navigator.clipboard.writeText(partyId)}>
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                <span className="text-xs font-bold font-mono tracking-widest text-slate-200">{partyId}</span>
+                                <Copy size={12} className="opacity-50"/>
                             </div>
-                            <button onClick={onLeave} className="pointer-events-auto bg-red-600/20 p-2 rounded-full text-red-500 hover:bg-red-600/40 backdrop-blur"><LogOut size={16}/></button>
+                            <button onClick={onLeave} className="pointer-events-auto bg-red-600/20 p-2 rounded-full text-red-500 hover:bg-red-600/40 backdrop-blur transition"><LogOut size={16}/></button>
                         </div>
 
-                        {/* Contenido */}
-                        {party.service === 'youtube' ? (
-                            party.currentVideoId ? <YTPlayer videoId={party.currentVideoId} state={party} isHost={isHost} onUpdate={update}/> : (
-                                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
-                                    <MonitorPlay size={48} className="mb-4 opacity-50"/>
-                                    <p>Esperando video...</p>
-                                </div>
-                            )
-                        ) : (
-                            <WebBrowser url={party.currentVideoId} isHost={isHost} onNavigate={changeContent} />
-                        )}
+                        {/* Player */}
+                        <div className="flex-1 relative w-full h-full overflow-hidden">
+                            {party.service === 'youtube' ? (
+                                party.currentVideoId ? <YTPlayer videoId={party.currentVideoId} state={party} isHost={isHost} onUpdate={update}/> : (
+                                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
+                                        <MonitorPlay size={48} className="mb-4 opacity-50"/>
+                                        <p className="text-sm">Esperando video...</p>
+                                    </div>
+                                )
+                            ) : (
+                                <WebBrowser url={party.currentVideoId} isHost={isHost} onNavigate={changeContent} />
+                            )}
+                        </div>
 
-                        {/* Barra YouTube Host */}
+                        {/* Controles YouTube (Solo Host) */}
                         {party.service === 'youtube' && isHost && (
-                            <div className="absolute bottom-0 w-full p-2 bg-black/80 backdrop-blur">
-                                <div className="flex gap-2">
-                                    <input className="flex-1 bg-gray-900 text-white text-sm rounded px-3 outline-none border border-gray-700" placeholder="Link de YouTube..." value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&changeContent(search)}/>
-                                    <button onClick={()=>changeContent(search)} className="bg-red-600 text-white font-bold px-3 py-1.5 rounded text-xs">VER</button>
-                                </div>
+                            <div className="p-3 bg-panel border-t border-white/10 flex gap-2 shrink-0 z-20">
+                                <input className="flex-1 bg-black border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-brand outline-none" placeholder="Link YouTube..." value={ytSearch} onChange={e=>setYtSearch(e.target.value)} onKeyDown={e=>e.key==='Enter'&&changeContent(ytSearch)}/>
+                                <button onClick={()=>changeContent(ytSearch)} className="bg-brand text-white font-bold px-4 rounded text-xs">VER</button>
                             </div>
                         )}
                     </div>
 
-                    {/* AREA 2: CHAT (Bottom en movil, Right en PC) */}
-                    <div className="chat-slot">
-                        {/* Lista Usuarios Horizontal */}
-                        <div className="h-14 border-b border-white/5 flex items-center px-4 gap-3 bg-panel overflow-x-auto no-scrollbar flex-shrink-0">
-                            {party.users?.map((u, i) => (
-                                <img key={i} src={u.photo} className="w-8 h-8 rounded-full border border-white/10 flex-shrink-0" title={u.name}/>
-                            ))}
-                            <div className="ml-auto text-xs text-green-500 font-bold flex items-center gap-1">
+                    {/* ZONA CHAT (GRID AREA 2) */}
+                    <div className="chat-area flex flex-col bg-panel min-h-0">
+                        {/* Header Chat */}
+                        <div className="h-12 border-b border-white/5 flex items-center px-4 gap-3 bg-black/20 shrink-0">
+                            <div className="flex -space-x-2 overflow-hidden py-1">
+                                {party.users?.map((u, i) => (
+                                    <img key={i} src={u.photo} className="w-7 h-7 rounded-full border border-slate-800" title={u.name}/>
+                                ))}
+                            </div>
+                            <div className="ml-auto text-xs font-bold text-slate-500 flex items-center gap-1">
                                 <Users size={12}/> {party.users?.length}
                             </div>
                         </div>
 
-                        {/* Mensajes */}
+                        {/* Lista Mensajes */}
                         <div className="flex-1 overflow-y-auto p-4 space-y-3">
                             {msgs.map((m, i) => (
                                 <div key={i} className={`flex flex-col ${m.system ? 'items-center opacity-60 my-2' : ''}`}>
@@ -310,9 +339,9 @@
                                         <span className="text-[10px] bg-white/5 px-2 py-1 rounded-full text-slate-400 border border-white/5">{m.text}</span>
                                     ) : (
                                         <div className={`flex gap-2 ${m.sender === user.displayName ? 'flex-row-reverse' : ''}`}>
-                                            <img src={m.photo} className="w-8 h-8 rounded-full bg-slate-800 flex-shrink-0"/>
-                                            <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm break-words ${m.sender === user.displayName ? 'bg-brand text-white rounded-tr-none' : 'bg-slate-800 text-slate-200 rounded-tl-none'}`}>
-                                                <div className="text-[10px] opacity-50 font-bold mb-0.5">{m.sender}</div>
+                                            <img src={m.photo} className="w-7 h-7 rounded-full bg-slate-800 flex-shrink-0"/>
+                                            <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm break-words ${m.sender === user.displayName ? 'bg-brand text-white rounded-tr-none' : 'bg-slate-800 text-slate-300 rounded-tl-none'}`}>
+                                                <div className="text-[9px] opacity-50 font-bold mb-0.5 uppercase tracking-wide">{m.sender}</div>
                                                 {m.text}
                                             </div>
                                         </div>
@@ -323,16 +352,55 @@
                         </div>
 
                         {/* Input */}
-                        <form onSubmit={send} className="p-3 bg-panel border-t border-white/5 flex gap-2 flex-shrink-0 safe-area-pb">
-                            <input className="flex-1 bg-black border border-slate-800 rounded-full px-4 py-2.5 text-sm text-white focus:border-brand outline-none transition" placeholder="Escribe..." value={txt} onChange={e=>setTxt(e.target.value)}/>
-                            <button type="submit" className="p-2.5 bg-brand rounded-full text-white shadow-lg active:scale-95"><Send size={18}/></button>
+                        <form onSubmit={send} className="p-3 border-t border-white/5 flex gap-2 shrink-0 bg-black/20">
+                            <input className="flex-1 bg-black border border-slate-800 rounded-full px-4 py-2.5 text-sm text-white focus:border-brand outline-none transition" placeholder="Chat..." value={txt} onChange={e=>setTxt(e.target.value)}/>
+                            <button type="submit" className="p-2.5 bg-brand rounded-full text-white hover:bg-indigo-500 transition shadow-lg"><Send size={16}/></button>
                         </form>
                     </div>
                 </div>
             );
         };
 
-        // --- APP ENTRY ---
+        // --- DASHBOARD ---
+        const Dashboard = ({ user, create, join }) => {
+            return (
+                <div className="min-h-screen bg-dark p-6 flex flex-col items-center overflow-y-auto">
+                    <div className="w-full max-w-md space-y-8 pb-10">
+                        <header className="flex justify-between items-center py-4">
+                            <div className="flex items-center gap-3">
+                                <img src={user.photoURL} className="w-10 h-10 rounded-full border border-slate-800"/>
+                                <div>
+                                    <h1 className="font-bold text-lg leading-none text-white">Hola, {user.displayName.split(' ')[0]}</h1>
+                                    <p className="text-xs text-slate-500">StreamParty Ultimate</p>
+                                </div>
+                            </div>
+                            <button onClick={()=>signOut(auth)} className="text-xs text-red-400 font-bold hover:text-red-300 transition">SALIR</button>
+                        </header>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            {SERVICES.map(svc => (
+                                <button key={svc.id} onClick={()=>create(svc.id, svc.url)} className={`h-28 rounded-2xl relative overflow-hidden group transition active:scale-95 border-t border-white/10 shadow-xl ${svc.color}`}>
+                                    <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition"></div>
+                                    <div className="relative z-10 flex flex-col items-center justify-center h-full text-white">
+                                        <i className={`fa-brands ${svc.icon} text-3xl mb-2 drop-shadow-md`}></i>
+                                        <span className="font-bold text-xs uppercase tracking-wide drop-shadow">{svc.name}</span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="bg-panel p-6 rounded-3xl border border-white/5 shadow-2xl">
+                            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2"><Link size={14}/> Unirse a Sala</h2>
+                            <div className="flex gap-2">
+                                <input id="code" placeholder="CÓDIGO" className="flex-1 bg-black border border-slate-800 rounded-xl px-4 py-3 text-center font-mono uppercase tracking-widest outline-none focus:border-brand transition text-white placeholder-slate-600"/>
+                                <button onClick={()=>join(document.getElementById('code').value.toUpperCase())} className="bg-white text-black font-bold px-6 rounded-xl hover:bg-slate-200 transition text-sm">ENTRAR</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const App = () => {
             const [user, setUser] = useState(null);
             const [room, setRoom] = useState(null);
@@ -355,60 +423,23 @@
 
             if(!user) return (
                 <div className="h-screen bg-dark flex flex-col items-center justify-center p-6 text-center">
-                    <div className="w-24 h-24 bg-gradient-to-tr from-brand to-purple-600 rounded-3xl mb-6 shadow-2xl flex items-center justify-center animate-enter">
-                        <Tv size={48} className="text-white"/>
+                    <div className="w-20 h-20 bg-gradient-to-tr from-brand to-purple-600 rounded-2xl mb-6 shadow-2xl flex items-center justify-center">
+                        <MonitorPlay size={40} className="text-white"/>
                     </div>
-                    <h1 className="text-4xl font-extrabold mb-2 text-white tracking-tighter">StreamParty</h1>
-                    <p className="text-slate-400 mb-8 font-medium">Cine sincronizado en tu bolsillo</p>
-                    <button onClick={()=>signInWithPopup(auth, new GoogleAuthProvider())} className="w-full max-w-xs bg-white text-black font-bold py-3.5 rounded-xl hover:scale-105 transition flex items-center justify-center gap-3 shadow-lg">
-                        <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5"/> Iniciar Sesión
+                    <h1 className="text-3xl font-extrabold mb-2 text-white">StreamParty</h1>
+                    <p className="text-slate-500 mb-8 text-sm">Cine sincronizado para amigos.</p>
+                    <button onClick={()=>signInWithPopup(auth, new GoogleAuthProvider())} className="w-full max-w-xs bg-white text-black font-bold py-3.5 rounded-xl hover:scale-105 transition flex items-center justify-center gap-3 shadow-lg text-sm">
+                        <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5"/> Entrar con Google
                     </button>
                 </div>
             );
 
             if(room) return <PartyRoom partyId={room} user={user} onLeave={()=>{setRoom(null); window.history.pushState({}, '', window.location.pathname);}}/>;
 
-            return (
-                <div className="min-h-screen bg-dark p-6 flex flex-col items-center animate-enter overflow-y-auto">
-                    <div className="w-full max-w-md space-y-8 pb-10">
-                        <header className="flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <img src={user.photoURL} className="w-10 h-10 rounded-full border border-slate-800"/>
-                                <div>
-                                    <h1 className="font-bold text-lg leading-none">Hola, {user.displayName.split(' ')[0]}</h1>
-                                    <p className="text-xs text-slate-500">¿Qué vemos hoy?</p>
-                                </div>
-                            </div>
-                            <button onClick={()=>signOut(auth)} className="text-xs text-red-400 font-bold bg-red-900/10 px-3 py-1 rounded-full">SALIR</button>
-                        </header>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            {SERVICES.map(svc => (
-                                <button key={svc.id} onClick={()=>create(svc.id, svc.url)} className={`h-32 rounded-2xl relative overflow-hidden group transition active:scale-95 ${svc.color}`}>
-                                    <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition"></div>
-                                    <div className="relative z-10 flex flex-col items-center justify-center h-full text-white">
-                                        <i className={`fa-brands ${svc.icon} text-3xl mb-2 drop-shadow-md`}></i>
-                                        <span className="font-bold text-sm drop-shadow">{svc.name}</span>
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-
-                        <div className="bg-panel p-6 rounded-3xl border border-white/5">
-                            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Unirse a Sala</h2>
-                            <div className="flex gap-2">
-                                <input id="code" placeholder="CÓDIGO" className="flex-1 bg-black border border-slate-800 rounded-xl px-4 py-3 text-center font-mono uppercase tracking-widest outline-none focus:border-brand transition text-white"/>
-                                <button onClick={()=>join(document.getElementById('code').value.toUpperCase())} className="bg-white text-black font-bold px-6 rounded-xl hover:bg-gray-200 transition">IR</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
+            return <Dashboard user={user} create={create} join={join} />;
         };
 
         createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
 </html>
-
-
